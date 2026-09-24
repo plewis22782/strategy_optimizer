@@ -1,0 +1,24 @@
+{
+  "name": "strategy-optimizer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MT5-style parameter optimizer for the Strike Canopy paper strategies -- runs their real tick functions against a local cache of The Well's history",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "opt": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.14",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}

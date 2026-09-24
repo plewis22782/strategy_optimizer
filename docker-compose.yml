@@ -1,0 +1,41 @@
+# Strategy Optimizer -- its OWN project, network, DB and container names.
+# Always run with this file's project name (set below); it shares nothing with
+# the tastytrade-market-recorder / the-well compose projects except that the
+# runner calls The Well's HTTP API (after hours, DayPack pulls only).
+name: strategy-optimizer
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: strategy-optimizer-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: optimizer
+      POSTGRES_PASSWORD: optimizer
+      POSTGRES_DB: optimizer
+    # Sim tables are UNLOGGED scratch; keep fsync on for the results tables.
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "max_connections=200", "-c", "synchronous_commit=off"]
+    volumes:
+      - ${OPT_HOST_DATA:-/mnt/data/optimizer}/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U optimizer"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  runner:
+    build: .
+    image: strategy-optimizer-runner
+    container_name: strategy-optimizer-runner
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./vendor/strike-canopy:/app/vendor/strike-canopy:ro
+      - ./test:/app/test:ro
+      - ${OPT_HOST_DATA:-/mnt/data/optimizer}/cache:/data
