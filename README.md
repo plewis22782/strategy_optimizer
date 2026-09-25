@@ -42,10 +42,19 @@ by `manifest.json`:
 - `passes(id, run_id, phase back|forward, generation, params, varied, metrics, criterion)`
 - `pass_days(pass_id, date, outcome, pnl, result, events)`
 
+## Where it runs
+
+On **Redfish** (192.168.4.31: 72 threads, 251 GB RAM) since 2026-09-25, moved
+from Charlie for the compute. `~/strategy-optimizer` + data in
+`~/strategy-optimizer-data` (`OPT_HOST_DATA` is set in `.env`). It reaches
+The Well over the LAN at `http://192.168.4.25:8092`. GitHub access from
+Redfish is a per-repo deploy key (`~/.ssh/strategy_optimizer_deploy_key`,
+wired via `git config core.sshCommand`), same pattern as Alan's repo.
+
 ## Commands
 
 ```bash
-export OPT_HOST_DATA=/mnt/data/optimizer        # where packs + pgdata live on the host
+export OPT_HOST_DATA=~/strategy-optimizer-data   # where packs + pgdata live on the host (Redfish)
 docker compose -p strategy-optimizer up -d --wait db runner
 docker exec strategy-optimizer-runner node_modules/.bin/tsx src/cli.ts pull --from 2026-09-15 --to 2026-09-23
 docker exec strategy-optimizer-runner node_modules/.bin/tsx src/cli.ts pass --strategy nutterfly10 --dates 2026-09-21 --params '{"stopMin":60,"waeFlipAbort":false}' --events
