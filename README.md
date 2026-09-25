@@ -14,7 +14,7 @@ Search (grid/genetic), the UI and the AI setup are next.
 
 | Reads | How | Writes |
 | --- | --- | --- |
-| The Well | HTTP API (`/api/chain-history`, `/api/bars`), **after hours only**, once per session -> DayPack | nothing |
+| The Well | HTTP API (`/api/chain-history`, `/api/bars`, `/api/expirations`, `/api/candles`), one request at a time, once per session/chain -> DayPack or generic cache | nothing |
 | Strike Canopy code | pinned clone in `vendor/strike-canopy` (`scripts/vendor-sync.sh`) | nothing |
 | Strike Canopy Paper Lab | read-only, for pass-vs-live comparison (phase 3) | nothing |
 | its own Postgres (`strategy-optimizer-db`) | sim schemas + results | `sim_w*`, `runs`, `passes`, `pass_days` |
@@ -42,6 +42,23 @@ by `manifest.json`:
 - `passes(id, run_id, phase back|forward, generation, params, varied, metrics, criterion)`
 - `pass_days(pass_id, date, outcome, pnl, result, events)`
 
+## Generic strategies (any ticker)
+
+JSON-defined strategies on any symbol The Well covers (S&P 500 / Nasdaq-100
++ SPX/QQQ/IWM, 2 years via Massive). Spec: `src/generic/spec.ts`; examples
+in `examples/generic/` (45 DTE put spread, weekly iron condor, monthly
+cash-secured put, 45 DTE strangle). Design notes: `docs/SPEC.md`.
+
+```bash
+docker exec strategy-optimizer-runner node_modules/.bin/tsx src/cli.ts generic \
+  --spec examples/generic/aapl-45dte-put-spread.json --from 2026-06-15 --to 2026-09-18 --trades --skips
+# sweep: every combination, ranked by a criterion
+  ... --grid '{"exit.profitTargetPct":[25,50,75],"costs.spreadMult":[1,2,3]}' --criterion recoveryFactor
+```
+
+Stock chains are **modeled** from trades (no historical quotes exist on
+this plan): always look at `spreadMult` 2-3 before trusting a result.
+
 ## Where it runs
 
 On **Redfish** (192.168.4.31: 72 threads, 251 GB RAM) since 2026-09-25, moved
@@ -64,7 +81,9 @@ docker compose -p strategy-optimizer run --rm --no-deps runner node_modules/.bin
 Typecheck: `docker run --rm -u 1000:1000 -v "$PWD":/app -w /app node:22-slim node_modules/.bin/tsc --noEmit -p tsconfig.json`
 
 ## Rules
-- DayPack pulls refuse 09:00-16:30 ET on weekdays (`--force` overrides; don't).
+- Pulls from The Well are serial (never parallel sweeps against it). The
+  after-hours-only rule was retired 2026-09-25: it existed only because the
+  live DB shared a saturated disk, and that DB is now on its own SSD.
 - Never point `DATABASE_URL` at `tasty-market-db`.
 - Never edit `vendor/strike-canopy`. Change Strike Canopy in its own dev
   tree, then re-pin with `scripts/vendor-sync.sh <commit>`.

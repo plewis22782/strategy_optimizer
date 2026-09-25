@@ -1,7 +1,8 @@
-// Pull one session's DayPack from The Well. After hours only: on 2026-09-23 a
-// backtest sweep hitting The Well during RTH timed out its chain-history
-// calls and drove the shared DB to ~260-1700% CPU. The guard is the point of
-// this file as much as the pull is.
+// Pull one session's DayPack from The Well, one request at a time. (On
+// 2026-09-23 16 parallel sweeps timed out its chain-history calls and drove
+// the shared DB to ~260-1700% CPU on its old saturated disk; the after-hours-
+// only guard that followed was retired 2026-09-25 when the live DB moved to
+// its own SSD. Pulls stay serial.)
 import type { Logger } from 'pino'
 import { etWallToUtcMs, WellClient, type BarsTable } from '../sc.js'
 import {
@@ -44,20 +45,6 @@ export function sessionBarsSpan(date: string): { fromMs: number; toMs: number } 
 // is the only way that history survives.
 export const PACK_BAR_TABLES: BarsTable[] = ['spx_minute_bars', 'es_implied_spx_minute', 'es_minute_bars']
 
-export function inRthWindow(nowMs = Date.now()): boolean {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour12: false,
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).formatToParts(new Date(nowMs))
-  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]))
-  if (p.weekday === 'Sat' || p.weekday === 'Sun') return false
-  const m = Number(p.hour) * 60 + Number(p.minute)
-  return m >= 9 * 60 && m <= 16 * 60 + 30
-}
-
 async function retry<T>(what: string, logger: Logger, fn: () => Promise<T | null>, ok: (v: T) => boolean): Promise<T> {
   let wait = 5_000
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -76,12 +63,8 @@ export async function pullDay(
   date: string,
   strikeCanopyRef: string,
   wellUrl: string,
-  logger: Logger,
-  opts: { force?: boolean } = {}
+  logger: Logger
 ): Promise<Manifest> {
-  if (!opts.force && inRthWindow()) {
-    throw new Error('daypack: refusing to pull between 09:00 and 16:30 ET on a weekday (use --force only if The Well is idle)')
-  }
   const dir = packDir(root, date)
   await ensureDir(dir)
   const hash = createHash('sha256')

@@ -1,0 +1,16 @@
+{
+  "name": "AAPL 45 DTE 30-delta put credit spread, $5 wide",
+  "symbol": "AAPL",
+  "entry": {
+    "weekdays": [1],
+    "timeEt": "10:00",
+    "targetDte": 45,
+    "maxOpen": 3,
+    "legs": [
+      { "cp": "put", "side": "short", "strike": { "by": "delta", "value": 0.30 } },
+      { "cp": "put", "side": "long", "strike": { "by": "width", "leg": 0, "value": 5 } }
+    ]
+  },
+  "exit": { "profitTargetPct": 50, "stopLossPct": 200, "exitDte": 21 },
+  "costs": { "spreadMult": 2, "fill": "natural", "commissionPerContract": 0.65 }
+}

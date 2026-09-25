@@ -1,0 +1,19 @@
+{
+  "name": "QQQ weekly 16-delta iron condor, $5 wings",
+  "symbol": "QQQ",
+  "entry": {
+    "weekdays": [1],
+    "timeEt": "10:00",
+    "targetDte": 4,
+    "dteMin": 2,
+    "dteMax": 7,
+    "legs": [
+      { "cp": "put", "side": "short", "strike": { "by": "delta", "value": 0.16 } },
+      { "cp": "put", "side": "long", "strike": { "by": "width", "leg": 0, "value": 5 } },
+      { "cp": "call", "side": "short", "strike": { "by": "delta", "value": 0.16 } },
+      { "cp": "call", "side": "long", "strike": { "by": "width", "leg": 2, "value": 5 } }
+    ]
+  },
+  "exit": { "profitTargetPct": 50, "stopLossPct": 200 },
+  "costs": { "spreadMult": 1 }
+}

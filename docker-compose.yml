@@ -38,4 +38,5 @@ services:
       - ./tsconfig.json:/app/tsconfig.json:ro
       - ./vendor/strike-canopy:/app/vendor/strike-canopy:ro
       - ./test:/app/test:ro
+      - ./examples:/app/examples:ro
       - ${OPT_HOST_DATA:-/mnt/data/optimizer}/cache:/data

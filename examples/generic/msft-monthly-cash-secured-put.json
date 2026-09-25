@@ -1,0 +1,13 @@
+{
+  "name": "MSFT ~30 DTE 25-delta cash-secured put",
+  "symbol": "MSFT",
+  "entry": {
+    "weekdays": [1, 2, 3, 4, 5],
+    "timeEt": "10:30",
+    "targetDte": 30,
+    "maxOpen": 1,
+    "legs": [{ "cp": "put", "side": "short", "strike": { "by": "delta", "value": 0.25 } }]
+  },
+  "exit": { "profitTargetPct": 50 },
+  "costs": { "spreadMult": 2 }
+}

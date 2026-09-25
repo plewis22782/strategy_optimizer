@@ -10,10 +10,10 @@ It reads market history from **The Well** and live paper results from
 1. **Exact fidelity.** A pass runs Strike Canopy's *real* tick functions
    (`nutterflyTick`, …), unmodified and pinned to a commit. There is no
    re-implementation that could drift from the live strategy.
-2. **Zero load on live systems.** Each session's data is pulled from The
-   Well once, after hours, into a local cache. Every pass after that reads
+2. **Minimal load on live systems.** Each session's data is pulled from The
+   Well once, serially, into a local cache. Every pass after that reads
    only the cache. (2026-09-23: running 16 sweep variants against The Well
-   during RTH timed out its chain-history calls and pushed the shared DB to
+   in parallel timed out its chain-history calls and pushed the shared DB to
    ~260-1700% CPU. Never again.)
 3. **MT5 feature parity where it matters:**
    - Each input has start / step / stop plus an "optimize" checkbox, and
@@ -118,9 +118,34 @@ The Well's archive lost sessions around the week of 2026-09-03. Every day
 Hotch and WAE gates need. The DayPack builder refuses a day whose manifest
 is missing a required input rather than silently producing "no-entry".
 
-Future extension: Massive (in The Well) has about 2 years of trade-built
-options minute bars. They have no quotes, so they can't drive
-mid-price fills without a quote model. Out of scope for now.
+Massive (in The Well) has about 2 years of trade-built options minute
+bars. They have no quotes; since 2026-09-25 The Well models them
+(`/api/chain-history` `source: "model"`: fair value from OTM trade IVs +
+a parity forward, modeled spread), which is what generic strategies use
+for every chain tasty never recorded.
+
+## Generic strategies (2026-09-25)
+
+Strike Canopy's strategies are all SPX/QQQ 0DTE; stocks mostly trade
+weeklies, monthlies and 45 DTE. `src/generic/` interprets a **GenericSpec**
+(JSON, zod-validated, `src/generic/spec.ts`) instead of replaying SC code:
+- **legs** (1-8): call/put, long/short, qty, strike by `delta`, `pctOtm`,
+  `offset`, `atm`, or `width` from an earlier leg -- verticals, condors,
+  strangles, flies, short puts, ratios...
+- **entry**: weekdays, time, `targetDte` (+ window; the closest expiration
+  that was actually LISTED that day -- weeklies appear ~5 weeks out),
+  `maxOpen`, filters (min credit / max debit, ATM IV band, trend vs SMA).
+- **exit**: profit target / stop (% of entry credit/debit, judged on mid),
+  `exitDte`, time of day, max hold; otherwise settled at intrinsic on
+  expiration day's close.
+- **costs**: `spreadMult` x the chain's spread (1 = real/modeled base;
+  2-3 realistic for stocks), natural or mid fills, commission.
+- **bucketSec**: exit resolution, default 30 min.
+Results reuse `PassMetrics` (tradedDays = trades, completionRate = win
+rate, wingCapital = summed max loss; ror null if any leg set is unbounded),
+over a daily mark-to-market equity curve. Chains are cached per
+(symbol, expiration, session) under `$OPT_DATA_DIR/generic/<SYM>/`.
+Known simplifications: no early assignment, cash settlement, D=1 pricing.
 
 ## Phases
 1. **Engine (CLI):** DayPack builder (after-hours guard), CachedWellClient,
@@ -136,7 +161,8 @@ mid-price fills without a quote model. Out of scope for now.
    what licensing (OPRA-derived data) and compute quotas are needed.
 
 ## Ops rules
-- DayPack pulls run only outside 09:00–16:30 ET on weekdays.
+- Pulls from The Well are serial. (The 09:00–16:30 ET ban was retired
+  2026-09-25 with the live DB's move to its own SSD.)
 - Everything lives under `/mnt/data/optimizer` (never on the root `sdb`
   disk, which the live DB saturates).
 - Strike Canopy code is consumed from a pinned local clone

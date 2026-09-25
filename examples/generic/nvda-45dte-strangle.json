@@ -1,0 +1,17 @@
+{
+  "name": "NVDA 45 DTE 16-delta short strangle, manage at 21 DTE",
+  "symbol": "NVDA",
+  "entry": {
+    "weekdays": [1],
+    "timeEt": "10:00",
+    "targetDte": 45,
+    "maxOpen": 2,
+    "legs": [
+      { "cp": "put", "side": "short", "strike": { "by": "delta", "value": 0.16 } },
+      { "cp": "call", "side": "short", "strike": { "by": "delta", "value": 0.16 } }
+    ],
+    "filters": { "atmIvMin": 0.30 }
+  },
+  "exit": { "profitTargetPct": 50, "exitDte": 21 },
+  "costs": { "spreadMult": 2 }
+}

@@ -1,8 +1,13 @@
 // opt <command>
-//   pull   --dates 2026-09-15,2026-09-16 | --from 2026-09-15 --to 2026-09-23  [--force]
-//          Pull DayPacks from The Well (after hours only unless --force).
+//   pull   --dates 2026-09-15,2026-09-16 | --from 2026-09-15 --to 2026-09-23
+//          Pull DayPacks from The Well (one request at a time).
 //   pass   --strategy nutterfly5 --dates ... [--params '{"stopMin":60}']
 //          Run one pass from the packs and print per-day results + metrics.
+//   generic --spec examples/generic/aapl-45dte-put-spread.json --from 2025-01-01 --to 2026-09-18
+//          [--trades] [--skips] [--json out.json]
+//          [--grid '{"entry.targetDte":[30,45],"exit.profitTargetPct":[25,50]}' --criterion totalPnl]
+//          Run a GENERIC (JSON-defined) strategy on any symbol: one pass, or
+//          every combination of --grid (dotted paths into the spec).
 //   accept Fidelity test: default-param passes must reproduce Strike Canopy's
 //          own bt_nutter5/bt_nutter10 rows (test/fixtures/golden-nutterfly.json).
 import 'dotenv/config'
@@ -16,7 +21,11 @@ import { readManifest } from './daypack/pack.js'
 import { ensureSimSchema, simPool } from './sim/db.js'
 import { STRATEGIES, resolveParams } from './strategies/registry.js'
 import { runPassDay, type DayResult } from './engine/pass.js'
-import { passMetrics } from './engine/metrics.js'
+import { criterionValue, passMetrics, type Criterion } from './engine/metrics.js'
+import { writeFile } from 'node:fs/promises'
+import { GenericSpec } from './generic/spec.js'
+import { ChainSource } from './generic/chains.js'
+import { runGeneric, type GenericResult } from './generic/engine.js'
 
 const Env = z.object({
   DATABASE_URL: z.string().min(1),
@@ -49,6 +58,27 @@ function dates(): string[] {
   return ds
 }
 
+/** Every combination of a {dotted.path: [values]} grid ([{}] when empty). */
+function expandGrid(grid: Record<string, unknown[]>): Array<Record<string, unknown>> {
+  let out: Array<Record<string, unknown>> = [{}]
+  for (const [k, vals] of Object.entries(grid)) {
+    if (!Array.isArray(vals) || !vals.length) throw new Error(`--grid ${k}: need a non-empty array`)
+    out = out.flatMap((o) => vals.map((v) => ({ ...o, [k]: v })))
+  }
+  return out
+}
+
+/** Set a dotted path ("entry.legs.0.strike.value") in a plain JSON object. */
+function setPath(obj: Record<string, unknown>, dotted: string, value: unknown): void {
+  const parts = dotted.split('.')
+  let cur: Record<string, unknown> = obj
+  for (const p of parts.slice(0, -1)) {
+    if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = {}
+    cur = cur[p] as Record<string, unknown>
+  }
+  cur[parts[parts.length - 1]] = value
+}
+
 async function scRef(): Promise<string> {
   return (await readFile(new URL('../vendor/strike-canopy.ref', import.meta.url), 'utf8').catch(() => 'unknown')).trim()
 }
@@ -68,7 +98,7 @@ async function main(): Promise<void> {
     for (const d of dates()) {
       const t0 = Date.now()
       try {
-        const m = await pullDay(well, env.OPT_DATA_DIR, d, ref, env.WELL_API_URL, logger, { force: flag('force') })
+        const m = await pullDay(well, env.OPT_DATA_DIR, d, ref, env.WELL_API_URL, logger)
         const checks = Object.entries(m.checks).map(([k, v]) => `${k}:${v.ok ? 'ok' : 'FAIL'}(${v.detail})`).join('  ')
         const bars = m.bars.map((b) => `${b.table}=${b.rows}`).join(' ')
         console.log(`${d}  ${((Date.now() - t0) / 1000).toFixed(0)}s  chain rows=${m.chains[0]?.rows}  ${bars}\n            ${checks}`)
@@ -76,6 +106,55 @@ async function main(): Promise<void> {
         console.log(`${d}  FAILED: ${err instanceof Error ? err.message : err}`)
       }
     }
+    return
+  }
+
+  if (cmd === 'generic') {
+    const specPath = arg('spec')
+    const from = arg('from')
+    const to = arg('to')
+    if (!specPath || !from || !to) throw new Error('generic needs --spec <file> --from YYYY-MM-DD --to YYYY-MM-DD')
+    const raw = JSON.parse(await readFile(specPath, 'utf8')) as Record<string, unknown>
+    const src = new ChainSource(env.OPT_DATA_DIR, env.WELL_API_URL, env.WELL_API_SECRET)
+    const grid = JSON.parse(arg('grid') ?? '{}') as Record<string, unknown[]>
+    const criterion = (arg('criterion') ?? 'totalPnl') as Criterion
+    const combos = expandGrid(grid)
+    const results: Array<{ vary: Record<string, unknown>; r: GenericResult }> = []
+    for (const vary of combos) {
+      const specObj = structuredClone(raw)
+      for (const [p, v] of Object.entries(vary)) setPath(specObj, p, v)
+      const spec = GenericSpec.parse(specObj)
+      const t0 = Date.now()
+      const r = await runGeneric(spec, src, from, to)
+      results.push({ vary, r })
+      const m = r.metrics
+      console.log(
+        `${JSON.stringify(vary)}  ${((Date.now() - t0) / 1000).toFixed(1)}s  trades=${m.tradedDays} win=${m.completionRate == null ? '—' : (m.completionRate * 100).toFixed(0) + '%'}` +
+          `  pnl=${usd(m.totalPnl)}  PF=${m.profitFactor?.toFixed(2) ?? '—'}  maxDD=${usd(m.maxDrawdown)}  ror=${m.ror == null ? '—' : (m.ror * 100).toFixed(1) + '%'}` +
+          `  chains=${JSON.stringify(r.chainSources)}`
+      )
+      if (flag('trades')) {
+        for (const t of r.trades) {
+          const legs = t.legs.map((l) => `${l.side === 'short' ? '-' : '+'}${l.qty}${l.cp[0].toUpperCase()}${l.k}@${l.openPx.toFixed(2)}`).join(' ')
+          console.log(
+            `   #${t.id} ${t.openDate} ${t.openTime} exp ${t.expiration} (${t.dteAtOpen}d) S=${t.spotOpen.toFixed(2)} ${legs}  ` +
+              `cash ${usd(t.entryCash)} -> ${t.exitDate} ${t.exitTime ?? ''} ${t.exitReason} ${usd(t.exitCash)}  pnl ${usd(t.pnl)}` +
+              `  maxLoss ${t.maxLoss == null ? 'unbounded' : usd(t.maxLoss)}`
+          )
+        }
+      }
+      if (flag('skips')) for (const s of r.skipped) console.log(`   skip ${s.date}: ${s.reason}`)
+    }
+    if (combos.length > 1) {
+      const ranked = [...results].sort((a, b) => criterionValue(b.r.metrics, criterion) - criterionValue(a.r.metrics, criterion))
+      console.log(`\nbest by ${criterion}:`)
+      for (const x of ranked.slice(0, 10)) console.log(`  ${criterionValue(x.r.metrics, criterion).toFixed(2).padStart(12)}  ${JSON.stringify(x.vary)}`)
+    } else {
+      console.log(JSON.stringify(results[0]?.r.metrics, null, 1))
+    }
+    console.log(`well: fetched=${src.stats.fetched} (${(src.stats.bytesFetched / 1e6).toFixed(1)} MB)  disk hits=${src.stats.diskHits}`)
+    const out = arg('json')
+    if (out) await writeFile(out, JSON.stringify(results.map((x) => ({ vary: x.vary, ...x.r })), null, 1))
     return
   }
 
@@ -142,7 +221,7 @@ async function main(): Promise<void> {
     return
   }
 
-  console.error('usage: opt pull|pass|accept  (see src/cli.ts header)')
+  console.error('usage: opt pull|pass|generic|accept  (see src/cli.ts header)')
   process.exitCode = 2
 }
 
