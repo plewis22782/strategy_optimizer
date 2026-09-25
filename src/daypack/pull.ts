@@ -108,8 +108,13 @@ export async function pullDay(
   const cfile = chainFile(key)
   hash.update(await writeJsonGz(path.join(dir, cfile), { key, spot: hist.spot, rows: hist.rows }))
   const buckets = new Set(hist.rows.map((r) => r.bucketMs)).size
+  // Count only buckets with at least one real quote: chain-history returns
+  // EVERY bucket (null mids where nothing was quoted), so counting buckets
+  // alone could never fail -- 2026-09-24 (recorder down from 14:50 ET)
+  // reported 397/397 while only 325 had a quote.
+  const quoted = new Set(hist.rows.filter((r) => r.mid != null).map((r) => r.bucketMs)).size
   man.chains.push({ file: cfile, key, rows: hist.rows.length, buckets })
-  man.checks.spx_chain = { ok: buckets >= 380, detail: `${buckets} of ~397 minute buckets quoted` }
+  man.checks.spx_chain = { ok: quoted >= 380, detail: `${quoted} of ${buckets} minute buckets quoted` }
 
   // --- SPX 1-min bars + /ES-implied fill, with the WAE warm-up span
   const span = sessionBarsSpan(date)
