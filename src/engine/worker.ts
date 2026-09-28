@@ -25,7 +25,8 @@ export type WorkerReply =
 
 const worker = Number(process.env.OPT_WORKER_ID)
 const dataRoot = process.env.OPT_DATA_DIR ?? '/data'
-const logger = pino({ level: process.env.LOG_LEVEL ?? 'warn' }, pino.destination(2))
+// Strategy ticks log every minute at info; a worker only surfaces warnings+.
+const logger = pino({ level: process.env.OPT_WORKER_LOG_LEVEL ?? 'warn' }, pino.destination(2))
 
 async function main(): Promise<void> {
   const schema = `sim_w${worker}`
