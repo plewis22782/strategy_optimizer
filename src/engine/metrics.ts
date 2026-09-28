@@ -54,9 +54,14 @@ export function passMetrics(days: DayResult[]): PassMetrics {
   const mean = pnl.length ? totalPnl / pnl.length : 0
   const sd = pnl.length > 1 ? Math.sqrt(pnl.reduce((a, x) => a + (x - mean) ** 2, 0) / (pnl.length - 1)) : 0
   const num = (k: string) => traded.reduce((a, d) => a + (Number(d.result?.[k]) || 0), 0)
-  const flies = num('butterflies')
+  // Trades and capital at risk come from each strategy's own StandardResult
+  // mapping (field names kept from the Nutterfly-first version: `flies` =
+  // trades, `wingCapital` = capital at risk). Completion/abort counts only
+  // exist for strategies whose result reports them.
+  const flies = traded.reduce((a, d) => a + d.std.trades, 0)
+  const wingCapital = traded.reduce((a, d) => a + (d.std.basis ?? 0), 0)
+  const reportsCompletion = traded.some((d) => d.result != null && 'completed' in d.result)
   const completed = num('completed')
-  const wingCapital = num('wingCapital')
   return {
     days: days.length,
     tradedDays: traded.length,
@@ -74,7 +79,7 @@ export function passMetrics(days: DayResult[]): PassMetrics {
     flies,
     completed,
     aborted: num('aborted'),
-    completionRate: flies > 0 ? completed / flies : null,
+    completionRate: reportsCompletion && flies > 0 ? completed / flies : null,
     wingCapital,
     ror: wingCapital > 0 ? totalPnl / wingCapital : null,
     tickErrors: days.reduce((a, d) => a + d.tickErrors, 0)

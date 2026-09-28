@@ -13,13 +13,25 @@ export type {
 } from '../vendor/strike-canopy/tastytrade-market-recorder/src/well-client.js'
 export { ChainHistoryCache } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/chain-history-cache.js'
 export { etWallToUtcMs } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/hist-chain.js'
-export { nutterflyTick } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/nutterfly.js'
+// Paper Lab's strategy registry + contract: the optimizer runs whatever is
+// registered there -- no strategy is hand-wired on this side.
+export { STRATEGY_REGISTRY, findByMode } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/registry.js'
 export {
-  NUTTERFLY_5_DEFAULT,
-  NUTTERFLY_10_DEFAULT
-} from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/presets.js'
-export type { NutterflyParams } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/types.js'
-export type { TickOpts } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/fly.js'
+  TUNABLE_ROLES,
+  lintDefinition,
+  paramDefaults,
+  paramsZod,
+  variantParams
+} from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/contract.js'
+export type {
+  Constraint,
+  DataNeed,
+  ParamRole,
+  ParamSpec,
+  StandardResult,
+  StrategyDefinition,
+  TickContext
+} from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/contract.js'
 
 /** Strike Canopy's schema.sql, for the sim DB's strategy_* DDL. */
 export const SC_SCHEMA_SQL = new URL(`${SC}/../db/schema.sql`, import.meta.url)

@@ -19,7 +19,8 @@ import { WellClient } from './sc.js'
 import { pullDay } from './daypack/pull.js'
 import { readManifest } from './daypack/pack.js'
 import { ensureSimSchema, simPool } from './sim/db.js'
-import { STRATEGIES, resolveParams } from './strategies/registry.js'
+import { getStrategy, listStrategies, resolveParams, strategyForMode } from './strategies/registry.js'
+import { TUNABLE_ROLES, lintDefinition, type ParamSpec } from './sc.js'
 import { runPassDay, type DayResult } from './engine/pass.js'
 import { criterionValue, passMetrics, type Criterion } from './engine/metrics.js'
 import { writeFile } from 'node:fs/promises'
@@ -158,19 +159,30 @@ async function main(): Promise<void> {
     return
   }
 
+  if (cmd === 'strategies') {
+    // Everything registered in Strike Canopy's Paper Lab registry, with the
+    // inputs the optimizer may search (tunable role + declared range).
+    for (const ref of listStrategies()) {
+      const specs = Object.entries(ref.def.params) as Array<[string, ParamSpec]>
+      const tunable = specs.filter(([, s]) => TUNABLE_ROLES.includes(s.role))
+      const lint = lintDefinition(ref.def)
+      console.log(`${ref.key.padEnd(16)} ${ref.mode.padEnd(16)} ${ref.label}  -- ${specs.length} inputs, ${tunable.length} searchable${lint.length ? `, LINT: ${lint.join('; ')}` : ''}`)
+    }
+    return
+  }
+
   if (cmd === 'pass' || cmd === 'accept') {
     const admin = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 })
     await ensureSimSchema(admin, 'sim_w0')
     const pool = simPool(env.DATABASE_URL, 'sim_w0')
     try {
       if (cmd === 'pass') {
-        const def = STRATEGIES[arg('strategy') ?? '']
-        if (!def) throw new Error(`--strategy one of ${Object.keys(STRATEGIES).join(', ')}`)
-        const params = resolveParams(def, JSON.parse(arg('params') ?? '{}'))
+        const ref = getStrategy(arg('strategy') ?? '')
+        const params = resolveParams(ref, JSON.parse(arg('params') ?? '{}'))
         const days: DayResult[] = []
         for (const d of dates()) {
           const t0 = Date.now()
-          const r = await runPassDay(pool, logger, env.OPT_DATA_DIR, def, params, d, 'opt_cli')
+          const r = await runPassDay(pool, logger, env.OPT_DATA_DIR, ref, params, d, 'opt_cli')
           days.push(r)
           console.log(
             `${d}  ${((Date.now() - t0) / 1000).toFixed(1)}s  ${r.outcome.padEnd(38)} ${usd(r.pnl).padStart(8)}` +
@@ -194,12 +206,15 @@ async function main(): Promise<void> {
       const norm = (s: string) => s.replace(/, IV [^%)]*%/, '')
       let fails = 0
       for (const g of golden) {
-        const def = STRATEGIES[g.mode === 'bt_nutter5' ? 'nutterfly5' : 'nutterfly10']
+        // golden rows are Strike Canopy's bt_<x> backtest modes; the registry
+        // knows the matching paper_<x> variant
+        const ref = strategyForMode(g.mode.replace(/^bt_/, 'paper_'))
+        if (!ref) throw new Error(`no registry variant for ${g.mode}`)
         if (!(await readManifest(env.OPT_DATA_DIR, g.date))) {
           console.log(`SKIP ${g.date} ${g.mode}: no DayPack`)
           continue
         }
-        const r = await runPassDay(pool, logger, env.OPT_DATA_DIR, def, def.preset, g.date, `accept_${g.mode}`)
+        const r = await runPassDay(pool, logger, env.OPT_DATA_DIR, ref, resolveParams(ref, {}), g.date, `accept_${g.mode}`)
         const got = r.events.map((e) => `${e.t} ${e.kind} ${Math.round(e.cash ?? 0)} ${norm(e.detail)}`)
         const want = g.events.map((e) => `${e.t} ${e.kind} ${Math.round(e.cash ?? 0)} ${norm(e.detail)}`)
         const same = r.pnl === g.totalPnl && r.outcome === g.outcome && JSON.stringify(got) === JSON.stringify(want)

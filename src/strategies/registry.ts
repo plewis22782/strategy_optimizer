@@ -1,55 +1,51 @@
-// Strategies the optimizer can run: a preset (every input's default and type)
-// plus the real Strike Canopy tick function. A TestSpec may only name
-// strategies and params that appear here; the AI setup layer reads this
-// registry, it cannot add to it.
-import type pg from 'pg'
-import type { Logger } from 'pino'
-import { NUTTERFLY_10_DEFAULT, NUTTERFLY_5_DEFAULT, nutterflyTick, type NutterflyParams, type TickOpts } from '../sc.js'
+// The optimizer's view of Strike Canopy's Paper Lab registry. A strategy is
+// addressed as "<definition id>/<variant>" (e.g. "nutterfly/w5"); the
+// variant only supplies the starting params -- every declared input can
+// still be overridden or searched.
+import { STRATEGY_REGISTRY, paramsZod, variantParams, type DataNeed, type StrategyDefinition } from '../sc.js'
 
-export type ParamValue = number | boolean | string
-export type ParamKind = 'number' | 'boolean' | 'string'
+export type ParamValue = number | boolean | string | unknown[]
 
-export interface StrategyDef {
+export interface StrategyRef {
   key: string
+  def: StrategyDefinition<any>
+  variant: string
+  mode: string
   label: string
-  preset: Record<string, ParamValue>
-  /** Inputs that must never be varied (identity/plumbing, not strategy logic). */
-  locked: string[]
-  /** DayPack checks a session must pass to be replayable for this strategy. */
-  requireChecks: string[]
-  tick(pool: pg.Pool, logger: Logger, params: Record<string, ParamValue>, atMs: number, opts: TickOpts): Promise<void>
 }
 
-const nutterfly = (key: string, label: string, preset: NutterflyParams): StrategyDef => ({
-  key,
-  label,
-  preset: preset as unknown as Record<string, ParamValue>,
-  locked: ['kind', 'symbol', 'dte'],
-  requireChecks: ['spx_chain', 'spx_bars'],
-  tick: (pool, logger, params, atMs, opts) =>
-    nutterflyTick(pool, logger, params as unknown as NutterflyParams, atMs, opts)
-})
-
-export const STRATEGIES: Record<string, StrategyDef> = {
-  nutterfly5: nutterfly('nutterfly5', 'Nutterfly $5 wings (SPXW 0DTE double butterfly)', NUTTERFLY_5_DEFAULT),
-  nutterfly10: nutterfly('nutterfly10', 'Nutterfly $10 wings (SPXW 0DTE double butterfly)', NUTTERFLY_10_DEFAULT)
+export function listStrategies(): StrategyRef[] {
+  return STRATEGY_REGISTRY.flatMap((def) =>
+    Object.entries(def.variants).map(([variant, v]) => ({ key: `${def.id}/${variant}`, def, variant, mode: v.mode, label: v.label }))
+  )
 }
 
-export function paramKind(def: StrategyDef, name: string): ParamKind | null {
-  if (!(name in def.preset)) return null
-  const v = def.preset[name]
-  return typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'string'
+export function getStrategy(key: string): StrategyRef {
+  const ref = listStrategies().find((s) => s.key === key)
+  if (!ref) throw new Error(`unknown strategy "${key}" -- one of ${listStrategies().map((s) => s.key).join(', ')}`)
+  return ref
 }
 
-/** preset <- overrides, with every override's name and type checked. */
-export function resolveParams(def: StrategyDef, overrides: Record<string, unknown>): Record<string, ParamValue> {
-  const out: Record<string, ParamValue> = { ...def.preset }
-  for (const [k, v] of Object.entries(overrides)) {
-    const kind = paramKind(def, k)
-    if (!kind) throw new Error(`${def.key}: unknown param "${k}"`)
-    if (def.locked.includes(k)) throw new Error(`${def.key}: param "${k}" is locked`)
-    if (typeof v !== kind) throw new Error(`${def.key}: param "${k}" must be a ${kind}, got ${typeof v}`)
-    out[k] = v as ParamValue
+export function strategyForMode(mode: string): StrategyRef | null {
+  return listStrategies().find((s) => s.mode === mode) ?? null
+}
+
+/** Variant defaults <- overrides, validated against the definition (kinds,
+ *  hard limits, cross-param constraints, no unknown keys). */
+export function resolveParams(ref: StrategyRef, overrides: Record<string, unknown>): Record<string, ParamValue> {
+  const merged = { ...variantParams(ref.def, ref.variant), ...overrides }
+  const r = paramsZod(ref.def).safeParse(merged)
+  if (!r.success) throw new Error(`${ref.key}: ${r.error.issues.map((i) => `${i.path.join('.') || '(params)'} ${i.message}`).join('; ')}`)
+  return r.data as Record<string, ParamValue>
+}
+
+/** DayPack checks a session must pass before this strategy may replay it,
+ *  derived from the definition's declared data footprint. */
+export function requireChecks(def: StrategyDefinition<any>): string[] {
+  const out = new Set<string>()
+  for (const d of def.footprint.data as readonly DataNeed[]) {
+    if (d.kind === 'chain-minute') out.add('spx_chain')
+    if (d.kind === 'bars-1m' && d.table === 'spx_minute_bars') out.add('spx_bars')
   }
-  return out
+  return [...out]
 }

@@ -6,7 +6,8 @@ import type pg from 'pg'
 import type { Logger } from 'pino'
 import { ChainHistoryCache, etWallToUtcMs } from '../sc.js'
 import { CachedWellClient, type CacheStats } from '../well/cached-client.js'
-import type { ParamValue, StrategyDef } from '../strategies/registry.js'
+import type { StandardResult } from '../sc.js'
+import { requireChecks, type ParamValue, type StrategyRef } from '../strategies/registry.js'
 
 export interface DayEvent {
   t: string // HH:MM ET
@@ -22,6 +23,8 @@ export interface DayResult {
   noEntry: boolean
   pnl: number | null
   result: Record<string, unknown> | null
+  /** The strategy's own mapping of `result` to the uniform shape. */
+  std: StandardResult
   events: DayEvent[]
   tickErrors: number
   firstError?: string
@@ -34,13 +37,13 @@ export async function runPassDay(
   pool: pg.Pool,
   logger: Logger,
   dataRoot: string,
-  def: StrategyDef,
+  ref: StrategyRef,
   params: Record<string, ParamValue>,
   date: string,
   mode: string
 ): Promise<DayResult> {
   const client = new CachedWellClient(logger)
-  await client.loadDay(dataRoot, date, def.requireChecks)
+  await client.loadDay(dataRoot, date, requireChecks(ref.def))
   await pool.query(`DELETE FROM strategy_position WHERE mode = $1 AND session_date = $2`, [mode, date])
 
   const from = etWallToUtcMs(date, 9, 30)
@@ -50,7 +53,7 @@ export async function runPassDay(
   let firstError: string | undefined
   for (let t = from; t <= to; t += BUCKET_SEC * 1000) {
     try {
-      await def.tick(pool, logger, params, t, { readModel: client, chainCache, histAtMs: t, mode })
+      await ref.def.tick({ pool, logger, mode, readModel: client, chainCache, histAtMs: t }, params, t)
     } catch (err) {
       tickErrors++
       firstError ??= err instanceof Error ? err.message : String(err)
@@ -73,16 +76,18 @@ export async function runPassDay(
     events = ev.rows
   }
   const r = pos?.result ?? null
-  const outcome = r ? String(r.outcome ?? '') : '(no position row)'
-  const pnl = r && Number.isFinite(Number(r.totalPnl)) ? Number(r.totalPnl) : null
+  const std = ref.def.result(r)
+  const outcome = pos ? std.outcome : '(no position row)'
+  const pnl = std.pnl
   // scratch rows are summarised into pass_days by the caller; drop them now
   await pool.query(`DELETE FROM strategy_position WHERE mode = $1 AND session_date = $2`, [mode, date])
   return {
     date,
     outcome,
-    noEntry: /no-entry/i.test(outcome) || !pos,
+    noEntry: std.noEntry || !pos,
     pnl,
     result: r,
+    std,
     events,
     tickErrors,
     firstError,
