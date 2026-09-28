@@ -139,14 +139,22 @@ route('POST', /^\/api\/runs$/, async (req) => {
   if (!parsed.success) throw new HttpError(400, parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '))
   const spec = parsed.data
   if (spec.threads > env.OPT_MAX_THREADS) throw new HttpError(400, `threads is capped at ${env.OPT_MAX_THREADS}`)
-  const rp = replayable(getStrategy(spec.strategy))
-  if (!rp.ok) throw new HttpError(400, `${spec.strategy} can't be replayed yet: ${rp.why}`)
+  const ref = getStrategy(spec.strategy)
   let combinations: number
+  let base: ReturnType<typeof buildSpace>['base']
   try {
-    combinations = buildSpace(getStrategy(spec.strategy), spec).combinations
+    const space = buildSpace(ref, spec)
+    combinations = space.combinations
+    base = space.base
   } catch (err) {
     throw new HttpError(400, err instanceof Error ? err.message : String(err))
   }
+  // Checked against the run's own resolved params (e.g. a fixed symbol
+  // override), not just the variant's default -- see registry.ts's
+  // footprintSymbols comment: a variant's own symbol can look replayable
+  // while an override on the same run points at an unpacked one.
+  const rp = replayable(ref, base)
+  if (!rp.ok) throw new HttpError(400, `${spec.strategy} can't be replayed yet: ${rp.why}`)
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO runs (status, spec, sc_ref, note) VALUES ('queued', $1, $2, $3) RETURNING id`,
     [JSON.stringify(spec), scRef, spec.note ?? null]

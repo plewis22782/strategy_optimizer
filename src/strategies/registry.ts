@@ -70,35 +70,46 @@ function needKey(d: DataNeed, symbols: readonly string[]): string[] {
  *  the already-fully-packed SPX variants unreplayable. Doesn't (yet) handle
  *  a search that varies `symbol` itself across multiple values within one
  *  run -- same gap this had before, just no longer masked by the
- *  everything-required default. */
-function footprintSymbols(ref: StrategyRef): readonly string[] {
+ *  everything-required default.
+ *
+ *  `params`, when given, is the run/pass's own RESOLVED params (e.g. a
+ *  fixed-value override on the strategy's `symbol` input) and takes
+ *  priority over the variant's static default. Without it, this can only
+ *  ever reflect what the variant declares, not what a specific run actually
+ *  asked for -- found live 2026-09-28: a nutterfly/w5 run with `symbol`
+ *  overridden to SPY still passed the w5 variant's SPX-keyed DayPack check
+ *  (requireChecks was called with no params in pass.ts), so every pass
+ *  loaded SPX's real chain data and replayed it as if it were SPY -- wrong
+ *  data, not missing data, and silently so (every pass just came back with
+ *  no sensible entry, not an error). */
+function footprintSymbols(ref: StrategyRef, params?: Record<string, ParamValue>): readonly string[] {
   const fp = ref.def.footprint.symbols
   if (fp.kind === 'fixed') return fp.symbols
   if (fp.allowed === 'universe') return ['*universe*']
-  const resolved = variantDefaults(ref)[fp.param]
+  const resolved = (params && params[fp.param] != null ? params[fp.param] : undefined) ?? variantDefaults(ref)[fp.param]
   return typeof resolved === 'string' ? [resolved] : fp.allowed
 }
 
 /** The data a strategy needs that DayPacks don't carry yet ([] = replayable). */
-export function missingData(ref: StrategyRef): string[] {
-  const symbols = footprintSymbols(ref)
+export function missingData(ref: StrategyRef, params?: Record<string, ParamValue>): string[] {
+  const symbols = footprintSymbols(ref, params)
   const out = new Set<string>()
   for (const d of ref.def.footprint.data as readonly DataNeed[]) for (const k of needKey(d, symbols)) if (!(k in PACKED)) out.add(k)
   return [...out]
 }
 
 /** Can the optimizer replay this strategy exactly? If not, why. */
-export function replayable(ref: StrategyRef): { ok: true } | { ok: false; why: string } {
+export function replayable(ref: StrategyRef, params?: Record<string, ParamValue>): { ok: true } | { ok: false; why: string } {
   if (ref.def.backtest && ref.def.backtest.supported === false) return { ok: false, why: ref.def.backtest.why }
-  const miss = missingData(ref)
+  const miss = missingData(ref, params)
   if (miss.length) return { ok: false, why: `DayPacks don't carry ${miss.join(', ')} yet` }
   return { ok: true }
 }
 
 /** DayPack checks a session must pass before this strategy may replay it,
  *  derived from the definition's declared data footprint. */
-export function requireChecks(ref: StrategyRef): string[] {
-  const symbols = footprintSymbols(ref)
+export function requireChecks(ref: StrategyRef, params?: Record<string, ParamValue>): string[] {
+  const symbols = footprintSymbols(ref, params)
   const out = new Set<string>()
   for (const d of ref.def.footprint.data as readonly DataNeed[]) {
     for (const k of needKey(d, symbols)) {

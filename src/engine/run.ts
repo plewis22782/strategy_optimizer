@@ -47,9 +47,10 @@ export async function usableSessions(
   dataRoot: string,
   ref: StrategyRef,
   from: string,
-  to: string
+  to: string,
+  params?: Record<string, ParamValue>
 ): Promise<{ usable: string[]; skipped: Array<{ date: string; why: string }> }> {
-  const need = requireChecks(ref)
+  const need = requireChecks(ref, params)
   const usable: string[] = []
   const skipped: Array<{ date: string; why: string }> = []
   for (const d of weekdays(from, to)) {
@@ -95,7 +96,7 @@ export async function executeRun(ctx: RunCtx, runId: number, spec: TestSpec): Pr
   const { db, pool, logger } = ctx
   const ref = getStrategy(spec.strategy)
   const space = buildSpace(ref, spec)
-  const { usable, skipped } = await usableSessions(ctx.dataRoot, ref, spec.from, spec.to)
+  const { usable, skipped } = await usableSessions(ctx.dataRoot, ref, spec.from, spec.to, space.base)
   const { back, fwd } = splitForward(usable, spec.forward)
   if (!back.length) throw new Error('no usable back-test sessions in the date range')
   await db.query(

@@ -44,7 +44,7 @@ export async function runPassDay(
   mode: string
 ): Promise<DayResult> {
   const client = new CachedWellClient(logger)
-  await client.loadDay(dataRoot, date, requireChecks(ref))
+  await client.loadDay(dataRoot, date, requireChecks(ref, params))
   await pool.query(`DELETE FROM strategy_position WHERE mode = $1 AND session_date = $2`, [mode, date])
 
   const from = etWallToUtcMs(date, 9, 30)
