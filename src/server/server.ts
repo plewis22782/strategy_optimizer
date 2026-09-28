@@ -22,7 +22,7 @@ import pg from 'pg'
 import pino from 'pino'
 import { z } from 'zod'
 import { ensureResultsSchema } from '../sim/db.js'
-import { getStrategy, listStrategies, variantDefaults } from '../strategies/registry.js'
+import { getStrategy, listStrategies, replayable, variantDefaults } from '../strategies/registry.js'
 import { buildSpace, TestSpec } from '../engine/space.js'
 import { executeRun, usableSessions } from '../engine/run.js'
 import { WorkerPool } from '../engine/pool.js'
@@ -122,6 +122,7 @@ route('GET', /^\/api\/strategies$/, async () =>
     constraints: ref.def.constraints ?? [],
     tunableRoles: TUNABLE_ROLES,
     defaults: variantDefaults(ref),
+    replayable: replayable(ref.def),
     params: ref.def.params
   }))
 )
@@ -138,6 +139,8 @@ route('POST', /^\/api\/runs$/, async (req) => {
   if (!parsed.success) throw new HttpError(400, parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '))
   const spec = parsed.data
   if (spec.threads > env.OPT_MAX_THREADS) throw new HttpError(400, `threads is capped at ${env.OPT_MAX_THREADS}`)
+  const rp = replayable(getStrategy(spec.strategy).def)
+  if (!rp.ok) throw new HttpError(400, `${spec.strategy} can't be replayed yet: ${rp.why}`)
   let combinations: number
   try {
     combinations = buildSpace(getStrategy(spec.strategy), spec).combinations

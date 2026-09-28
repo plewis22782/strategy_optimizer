@@ -48,8 +48,13 @@ async function init() {
   $('metaLine').textContent = `Strategies from Strike Canopy's Paper Lab registry @ ${meta.strikeCanopyRef} · up to ${meta.maxThreads} threads on Redfish`
   $('threads').max = meta.maxThreads
   $('threads').value = meta.maxThreads
-  $('strategy').innerHTML = strategies.map((s) => `<option value="${esc(s.key)}">${esc(s.label)} — ${esc(s.key)}</option>`).join('')
-  selectStrategy(strategies[0]?.key)
+  // replayable strategies first; the rest are listed (their inputs are still
+  // worth seeing) but can't be started until the data they need is packed
+  const ordered = [...strategies].sort((a, b) => Number(b.replayable.ok) - Number(a.replayable.ok))
+  $('strategy').innerHTML = ordered
+    .map((s) => `<option value="${esc(s.key)}">${esc(s.label)} — ${esc(s.key)}${s.replayable.ok ? '' : ' (not replayable yet)'}</option>`)
+    .join('')
+  selectStrategy(ordered[0]?.key)
   loadRuns()
 }
 
@@ -201,7 +206,8 @@ function summary() {
   const grid = $('search').value === 'grid' || combos <= (+$('population').value || 64) * 2
   const passes = grid ? combos : Math.min(combos, (+$('population').value || 64) * (+$('maxGen').value || 40))
   if ($('search').value === 'grid' && combos > 20000) warns.push(`A complete grid of ${fmtN(combos)} passes is too big (max 20,000) — use Genetic`)
-  if (!nB) warns.push('No usable sessions in this date range')
+  if (!cur.replayable.ok) warns.push(`Can't replay this strategy yet: ${cur.replayable.why}`)
+  else if (!nB) warns.push('No usable sessions in this date range')
   const threads = Math.min(meta.maxThreads, Math.max(1, +$('threads').value || 1))
   const fwdPasses = f ? Math.ceil(passes * (grid ? 0.1 : 0.25)) : 0
   const stress = $('costStress').checked ? 2 : 1

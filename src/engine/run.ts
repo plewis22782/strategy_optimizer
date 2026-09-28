@@ -59,7 +59,11 @@ export async function usableSessions(
       continue
     }
     const bad = need.filter((c) => !m.checks[c]?.ok)
-    if (bad.length) skipped.push({ date: d, why: bad.map((c) => `${c}: ${m.checks[c]?.detail ?? 'missing'}`).join('; ') })
+    if (bad.length)
+      skipped.push({
+        date: d,
+        why: bad.map((c) => (c.startsWith('missing:') ? `DayPacks have no ${c.slice(8)} data` : `${c}: ${m.checks[c]?.detail ?? 'missing'}`)).join('; ')
+      })
     else usable.push(d)
   }
   return { usable, skipped }

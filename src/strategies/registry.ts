@@ -39,13 +39,54 @@ export function resolveParams(ref: StrategyRef, overrides: Record<string, unknow
   return r.data as Record<string, ParamValue>
 }
 
+/** What a DayPack can supply today, as the manifest check that proves it. */
+const PACKED: Record<string, string> = {
+  'chain-minute:SPX': 'spx_chain',
+  'bars-1m:spx_minute_bars': 'spx_bars',
+  'bars-1m:es_implied_spx_minute': '', // packed; no per-day check needed
+  'bars-1m:es_minute_bars': ''
+}
+
+function needKey(d: DataNeed, symbols: readonly string[]): string[] {
+  switch (d.kind) {
+    case 'chain-minute':
+      return (d.symbol ? [d.symbol] : symbols).map((s) => `chain-minute:${s}`)
+    case 'bars-1m':
+      return [`bars-1m:${d.table}`]
+    default:
+      return [d.kind]
+  }
+}
+
+/** The data a strategy needs that DayPacks don't carry yet ([] = replayable). */
+export function missingData(def: StrategyDefinition<any>): string[] {
+  const fp = def.footprint.symbols
+  const symbols = fp.kind === 'fixed' ? fp.symbols : fp.allowed === 'universe' ? ['*universe*'] : fp.allowed
+  const out = new Set<string>()
+  for (const d of def.footprint.data as readonly DataNeed[]) for (const k of needKey(d, symbols)) if (!(k in PACKED)) out.add(k)
+  return [...out]
+}
+
+/** Can the optimizer replay this strategy exactly? If not, why. */
+export function replayable(def: StrategyDefinition<any>): { ok: true } | { ok: false; why: string } {
+  if (def.backtest && def.backtest.supported === false) return { ok: false, why: def.backtest.why }
+  const miss = missingData(def)
+  if (miss.length) return { ok: false, why: `DayPacks don't carry ${miss.join(', ')} yet` }
+  return { ok: true }
+}
+
 /** DayPack checks a session must pass before this strategy may replay it,
  *  derived from the definition's declared data footprint. */
 export function requireChecks(def: StrategyDefinition<any>): string[] {
+  const fp = def.footprint.symbols
+  const symbols = fp.kind === 'fixed' ? fp.symbols : fp.allowed === 'universe' ? ['*universe*'] : fp.allowed
   const out = new Set<string>()
   for (const d of def.footprint.data as readonly DataNeed[]) {
-    if (d.kind === 'chain-minute') out.add('spx_chain')
-    if (d.kind === 'bars-1m' && d.table === 'spx_minute_bars') out.add('spx_bars')
+    for (const k of needKey(d, symbols)) {
+      const c = PACKED[k]
+      if (c === undefined) out.add(`missing:${k}`) // fail closed -- no pack has it
+      else if (c) out.add(c)
+    }
   }
   return [...out]
 }

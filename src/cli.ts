@@ -19,7 +19,7 @@ import { WellClient } from './sc.js'
 import { pullDay } from './daypack/pull.js'
 import { readManifest } from './daypack/pack.js'
 import { ensureSimSchema, simPool } from './sim/db.js'
-import { getStrategy, listStrategies, resolveParams, strategyForMode } from './strategies/registry.js'
+import { getStrategy, listStrategies, replayable, resolveParams, strategyForMode } from './strategies/registry.js'
 import { TUNABLE_ROLES, lintDefinition, type ParamSpec } from './sc.js'
 import { runPassDay, type DayResult } from './engine/pass.js'
 import { criterionValue, passMetrics, type Criterion } from './engine/metrics.js'
@@ -166,7 +166,11 @@ async function main(): Promise<void> {
       const specs = Object.entries(ref.def.params) as Array<[string, ParamSpec]>
       const tunable = specs.filter(([, s]) => TUNABLE_ROLES.includes(s.role))
       const lint = lintDefinition(ref.def)
-      console.log(`${ref.key.padEnd(16)} ${ref.mode.padEnd(16)} ${ref.label}  -- ${specs.length} inputs, ${tunable.length} searchable${lint.length ? `, LINT: ${lint.join('; ')}` : ''}`)
+      const rp = replayable(ref.def)
+      console.log(
+        `${ref.key.padEnd(18)} ${ref.mode.padEnd(19)} ${String(specs.length).padStart(2)} inputs ${String(tunable.length).padStart(2)} searchable  ` +
+          `${rp.ok ? 'REPLAYABLE' : `not replayable: ${rp.why}`}${lint.length ? `  LINT: ${lint.join('; ')}` : ''}`
+      )
     }
     return
   }
