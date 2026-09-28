@@ -4,7 +4,26 @@
 # runner calls The Well's HTTP API (after hours, DayPack pulls only).
 name: strategy-optimizer
 
+networks:
+  # Fixed subnet so the ollama-proxy service (network_mode: host) can bind to
+  # a known, stable gateway address instead of whatever Docker auto-assigns.
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.90.0/24
+
 services:
+  # Ollama on the host listens on 127.0.0.1 only; this relays it onto the
+  # bridge gateway address so the server container can reach it without
+  # widening Ollama's own exposure. See ollama-proxy/nginx.conf.
+  ollama-proxy:
+    image: nginx:alpine
+    container_name: strategy-optimizer-ollama-proxy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./ollama-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+
   db:
     image: postgres:16-alpine
     container_name: strategy-optimizer-db
@@ -57,14 +76,12 @@ services:
       OPT_PORT: "8430"
       LOG_LEVEL: info
       # AI analysis (on-demand, src/analysis): Redfish's own Ollama, reached
-      # via the host-gateway alias since it's bound to the host's 127.0.0.1
-      # only and this container is on its own bridge network.
-      OPT_OLLAMA_URL: "${OPT_OLLAMA_URL:-http://host.docker.internal:11434}"
+      # through the ollama-proxy service since Ollama itself is bound to the
+      # host's 127.0.0.1 only.
+      OPT_OLLAMA_URL: "${OPT_OLLAMA_URL:-http://172.30.90.1:11435}"
       OPT_OLLAMA_MODEL: "${OPT_OLLAMA_MODEL:-qwen3:30b-a3b-ctx32k}"
     command: ["node", "--import", "tsx", "src/server/server.ts"]
     cpus: "${OPT_MAX_THREADS:-30}"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
