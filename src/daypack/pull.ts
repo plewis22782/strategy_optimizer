@@ -45,6 +45,14 @@ export function sessionBarsSpan(date: string): { fromMs: number; toMs: number } 
 // is the only way that history survives.
 export const PACK_BAR_TABLES: BarsTable[] = ['spx_minute_bars', 'es_implied_spx_minute', 'es_minute_bars']
 
+// Every symbol whose 0DTE chain gets pulled, alongside SPX -- added 2026-09-28
+// so PCS/Nutterfly variants on QQQ/IWM/SPY have something to replay. Each
+// gets its own chain_<symbol>_... file (chainFile already keys on symbol) and
+// its own <sym>_chain manifest check; a symbol with no 0DTE listing that day
+// just fails its own check (empty rows, not an error) rather than aborting
+// the whole day's pull.
+export const CHAIN_SYMBOLS = ['SPX', 'QQQ', 'IWM', 'SPY']
+
 async function retry<T>(what: string, logger: Logger, fn: () => Promise<T | null>, ok: (v: T) => boolean): Promise<T> {
   let wait = 5_000
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -80,24 +88,35 @@ export async function pullDay(
     sha256: ''
   }
 
-  // --- 0DTE SPX chain history (the Nutterfly / fly / pcs / meic family)
-  const key = sessionChainKey('SPX', date)
-  const hist = await retry(
-    `chain-history SPX ${date}`,
-    logger,
-    () => well.getChainHistory(key.symbol, key.expiration, key.fromMs, key.toMs, key.bucketSec, key.lookbackSec),
-    (h) => h.rows.length > 0
-  )
-  const cfile = chainFile(key)
-  hash.update(await writeJsonGz(path.join(dir, cfile), { key, spot: hist.spot, rows: hist.rows }))
-  const buckets = new Set(hist.rows.map((r) => r.bucketMs)).size
-  // Count only buckets with at least one real quote: chain-history returns
-  // EVERY bucket (null mids where nothing was quoted), so counting buckets
-  // alone could never fail -- 2026-09-24 (recorder down from 14:50 ET)
-  // reported 397/397 while only 325 had a quote.
-  const quoted = new Set(hist.rows.filter((r) => r.mid != null).map((r) => r.bucketMs)).size
-  man.chains.push({ file: cfile, key, rows: hist.rows.length, buckets })
-  man.checks.spx_chain = { ok: quoted >= 380, detail: `${quoted} of ${buckets} minute buckets quoted` }
+  // --- 0DTE chain history, one symbol at a time (SPX for the Nutterfly / fly
+  // / pcs / meic family; QQQ/IWM/SPY added 2026-09-28 for their own PCS/
+  // Nutterfly variants). A symbol with no 0DTE listing that day (or any other
+  // failure) just fails its own <sym>_chain check -- caught per symbol so one
+  // bad/thin symbol never costs the others their otherwise-good pull.
+  for (const sym of CHAIN_SYMBOLS) {
+    const checkName = `${sym.toLowerCase()}_chain`
+    const key = sessionChainKey(sym, date)
+    try {
+      const hist = await retry(
+        `chain-history ${sym} ${date}`,
+        logger,
+        () => well.getChainHistory(key.symbol, key.expiration, key.fromMs, key.toMs, key.bucketSec, key.lookbackSec),
+        (h) => h.rows.length > 0
+      )
+      const cfile = chainFile(key)
+      hash.update(await writeJsonGz(path.join(dir, cfile), { key, spot: hist.spot, rows: hist.rows }))
+      const buckets = new Set(hist.rows.map((r) => r.bucketMs)).size
+      // Count only buckets with at least one real quote: chain-history returns
+      // EVERY bucket (null mids where nothing was quoted), so counting buckets
+      // alone could never fail -- 2026-09-24 (recorder down from 14:50 ET)
+      // reported 397/397 while only 325 had a quote.
+      const quoted = new Set(hist.rows.filter((r) => r.mid != null).map((r) => r.bucketMs)).size
+      man.chains.push({ file: cfile, key, rows: hist.rows.length, buckets })
+      man.checks[checkName] = { ok: quoted >= 380, detail: `${quoted} of ${buckets} minute buckets quoted` }
+    } catch (err) {
+      man.checks[checkName] = { ok: false, detail: err instanceof Error ? err.message : String(err) }
+    }
+  }
 
   // --- SPX 1-min bars + /ES-implied fill, with the WAE warm-up span
   const span = sessionBarsSpan(date)

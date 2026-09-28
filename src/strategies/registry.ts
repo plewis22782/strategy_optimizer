@@ -42,6 +42,15 @@ export function resolveParams(ref: StrategyRef, overrides: Record<string, unknow
 /** What a DayPack can supply today, as the manifest check that proves it. */
 const PACKED: Record<string, string> = {
   'chain-minute:SPX': 'spx_chain',
+  // QQQ/IWM/SPY 0DTE chains, added 2026-09-28 alongside pull.ts's own
+  // per-symbol loop (CHAIN_SYMBOLS) -- for PCS/Nutterfly variants on those
+  // symbols. streamed_minute_bars (their WAE/candle-context table) isn't
+  // packed at all yet, so a strategy needing it on a non-SPX symbol still
+  // correctly reports unreplayable -- only Nutterfly's SPX branch needs
+  // spx_minute_bars/es_implied_spx_minute; PCS needs no bars-1m at all.
+  'chain-minute:QQQ': 'qqq_chain',
+  'chain-minute:IWM': 'iwm_chain',
+  'chain-minute:SPY': 'spy_chain',
   'bars-1m:spx_minute_bars': 'spx_bars',
   'bars-1m:es_implied_spx_minute': '', // packed; no per-day check needed
   'bars-1m:es_minute_bars': '',
