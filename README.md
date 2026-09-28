@@ -19,6 +19,35 @@ Search (grid/genetic), the UI and the AI setup are next.
 | Strike Canopy Paper Lab | read-only, for pass-vs-live comparison (phase 3) | nothing |
 | its own Postgres (`strategy-optimizer-db`) | sim schemas + results | `sim_w*`, `runs`, `passes`, `pass_days` |
 
+## Web UI (Redfish, port 8430)
+
+`http://192.168.4.31:8430` -- the optimizer's own page (not a Strike Canopy
+tab; may later be offered to users as a "human analysis" add-on).
+
+- **Strategies come from Strike Canopy's Paper Lab registry** (pinned in
+  `vendor/strike-canopy.ref`; `strategy/registry.ts` + `strategy/contract.ts`
+  there). Every declared input shows with its role, default and search range;
+  tick **Optimize** and edit Start / Step / Stop (time windows for times,
+  `+off` for rules with an off value). Anything added to the registry appears
+  here with no UI change.
+- **Search:** complete grid (<= 20,000 passes) or genetic (seeded population,
+  tournament selection, crossover, mutation, 2 elites; stops at max
+  generations or N flat generations). **Forward test:** hold back the last
+  1/2, 1/3 or 1/4 of the sessions; the top 25% (genetic) / 10% (grid) of
+  back-test passes are re-run on them.
+- **Results are permanent** (`day_results` on Redfish): every (strategy +
+  definition version, params, session, DayPack fingerprint) is computed once
+  and reused by every later run. Bump the definition's `version` in Strike
+  Canopy when the strategy's behaviour changes for the same params.
+- **CPU cap:** the `server` container's `cpus` = `OPT_MAX_THREADS` (30) --
+  worker processes fork inside it, so the optimizer can't take the local AI's
+  half of Redfish.
+
+Deploy (Redfish): `git pull && docker compose -p strategy-optimizer up -d --no-deps db server`.
+Redfish can't fetch Strike Canopy from GitHub (no key for that repo); push a
+new pin from Charlie: `git -C ~/sc-registry push ssh://hotchachachaaa@192.168.4.31/home/hotchachachaaa/strategy-optimizer/vendor/strike-canopy <commit>:refs/heads/pin-<commit>`,
+then `git -C vendor/strike-canopy checkout --detach <commit>` on Redfish.
+
 ## Schemas
 
 **DayPack** (`$OPT_DATA_DIR/packs/<date>/`, gzip JSON, immutable), described
