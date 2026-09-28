@@ -211,7 +211,7 @@ async function main(): Promise<void> {
       // accept
       // Every fixture = Strike Canopy's own bt_* backtest rows (+ event logs):
       // the optimizer must reproduce them exactly at default params.
-      const fixtures = ['golden-nutterfly.json', 'golden-paperlab.json', 'golden-exhaustion.json']
+      const fixtures = ['golden-nutterfly.json', 'golden-paperlab.json', 'golden-exhaustion.json', 'golden-fly.json']
       const golden = (
         await Promise.all(fixtures.map(async (f) => JSON.parse(await readFile(new URL(`../test/fixtures/${f}`, import.meta.url), 'utf8'))))
       ).flat() as Array<{

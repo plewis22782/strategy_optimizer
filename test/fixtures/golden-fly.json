@@ -1,0 +1,5 @@
+[{"id":418,"mode":"bt_fly","date":"2026-09-15","outcome":"no-entry","totalPnl":null,"events":[]}, 
+ {"id":431,"mode":"bt_fly","date":"2026-09-16","outcome":"no-entry","totalPnl":null,"events":[]}, 
+ {"id":450,"mode":"bt_fly","date":"2026-09-17","outcome":"no-entry","totalPnl":null,"events":[]}, 
+ {"id":463,"mode":"bt_fly","date":"2026-09-18","outcome":"win (revisit / target)","totalPnl":-42,"events":[{"t" : "12:02", "kind" : "entry", "structure" : "fly", "cash" : 106, "detail" : "call fly 7635/7645/7655  debit $-106  (open 7643.7, spot 7618.5, move -25)"}, {"t" : "12:03", "kind" : "close_side", "structure" : "fly", "cash" : -148, "detail" : "profit target 4x; spot 7619.2, fly worth $-148"}]}, 
+ {"id":475,"mode":"bt_fly","date":"2026-09-21","outcome":"expiry — worthless (max loss)","totalPnl":-67,"events":[{"t" : "11:05", "kind" : "entry", "structure" : "fly", "cash" : -61, "detail" : "put fly 7685/7695/7705  debit $61  (open 7695.3, spot 7724.7, move 29)"}, {"t" : "16:00", "kind" : "expiry", "structure" : "fly", "cash" : -6, "detail" : "expiry; spot 7764.7, fly worth $-6"}]}]

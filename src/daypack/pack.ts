@@ -52,7 +52,7 @@ export interface Manifest {
    *  attached after the pull by `opt import-sc`. Each has its own sha, so
    *  attaching one never changes the core fingerprint (and never throws away
    *  stored results of strategies that don't use it). */
-  extras?: Array<{ kind: 'trend-state'; symbol: string; expiration: string; file: string; sha256: string; points: number }>
+  extras?: Array<{ kind: 'trend-state' | 'spot-raw'; symbol: string; expiration: string; file: string; sha256: string; points: number }>
 }
 
 export function packDir(root: string, date: string): string {

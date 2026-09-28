@@ -45,7 +45,8 @@ const PACKED: Record<string, string> = {
   'bars-1m:spx_minute_bars': 'spx_bars',
   'bars-1m:es_implied_spx_minute': '', // packed; no per-day check needed
   'bars-1m:es_minute_bars': '',
-  'trend-state': 'trend_state' // attached by `opt import-sc` (Strike Canopy's getTrendState)
+  'trend-state': 'trend_state', // attached by `opt import-sc` (Strike Canopy's getTrendState)
+  'spot-raw': 'raw_spot' // attached by `opt import-sc` (Strike Canopy's rawSpotAt series)
 }
 
 function needKey(d: DataNeed, symbols: readonly string[]): string[] {

@@ -11,6 +11,15 @@ import { readPackFile } from '../well/cached-client.js'
 /** A full session's trend state has ~414 minute points (pre-open + RTH);
  *  a day the recorder or the Options Map was short on data has fewer. */
 const TREND_MIN_POINTS = 380
+/** Raw-spot minutes with a price, of 398 (397 walk minutes + the 09:35 ref). */
+const SPOT_MIN_PRICED = 370
+
+interface SpotFile {
+  kind: 'spot-raw'
+  symbol: string
+  date: string
+  points: Array<[number, number, number | null]>
+}
 
 interface TrendFile {
   kind: 'trend-state'
@@ -30,6 +39,24 @@ export async function importScData(root: string, srcDir: string): Promise<string
       continue
     }
     for (const f of (await readdir(path.join(srcDir, date))).sort()) {
+      const sm = f.match(/^rawspot_([A-Z0-9.]+)_(\d{4}-\d{2}-\d{2})\.json\.gz$/)
+      if (sm) {
+        const src = path.join(srcDir, date, f)
+        const buf = await readFile(src)
+        const body = JSON.parse(gunzipSync(buf).toString('utf8')) as SpotFile
+        if (body.kind !== 'spot-raw' || body.date !== date || !Array.isArray(body.points)) {
+          log.push(`${date}: ${f} is not a raw-spot export for this session -- skipped`)
+          continue
+        }
+        const dest = `sc_${f}`
+        await copyFile(src, path.join(packDir(root, date), dest))
+        const priced = body.points.filter((p) => p[2] != null).length
+        const extra = { kind: 'spot-raw' as const, symbol: body.symbol, expiration: date, file: dest, sha256: createHash('sha256').update(buf).digest('hex'), points: priced }
+        man.extras = [...(man.extras ?? []).filter((e) => !(e.kind === extra.kind && e.symbol === extra.symbol)), extra]
+        if (body.symbol === 'SPX') man.checks.raw_spot = { ok: priced >= SPOT_MIN_PRICED, detail: `${priced} of ${body.points.length} raw-spot minutes priced` }
+        log.push(`${date}: ${body.symbol} raw spot, ${priced}/${body.points.length} priced${priced < SPOT_MIN_PRICED ? ' (PARTIAL -- session fails raw_spot)' : ''}`)
+        continue
+      }
       const m = f.match(/^trendstate_([A-Z0-9.]+)_(\d{4}-\d{2}-\d{2})\.json\.gz$/)
       if (!m) continue
       const src = path.join(srcDir, date, f)
@@ -79,6 +106,15 @@ export async function backtestDataFor(root: string, date: string): Promise<Backt
       if (!e) return null
       const body = await readPackFile<TrendFile>(path.join(packDir(root, date), e.file))
       return body.series as never
+    },
+    rawSpot: async (symbol, atMs, lookbackSec) => {
+      const e = man?.extras?.find((x) => x.kind === 'spot-raw' && x.symbol === symbol)
+      if (!e) throw new Error(`no ${symbol} raw-spot series cached for ${date}`)
+      const body = await readPackFile<SpotFile & { _idx?: Map<string, number | null> }>(path.join(packDir(root, date), e.file))
+      body._idx ??= new Map(body.points.map(([t, lb, v]) => [`${t}|${lb}`, v]))
+      const k = `${atMs}|${lookbackSec}`
+      if (!body._idx.has(k)) throw new Error(`raw spot ${symbol} at ${new Date(atMs).toISOString()} / ${lookbackSec}s was not precomputed`)
+      return body._idx.get(k) ?? null
     }
   }
 }
