@@ -24,6 +24,11 @@ export const TestSpec = z.object({
   /** Hold back the last 1/n of the sessions (0 = no forward test), or a date. */
   forward: z.union([z.literal(0), z.literal(2), z.literal(3), z.literal(4), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]),
   search: z.enum(['grid', 'genetic']),
+  /** Pass budget for the back test. Genetic: stop once this many passes have
+   *  run (the last generation is trimmed to fit). Grid: when the grid is
+   *  bigger, test a seeded random sample of this many combinations. Passes
+   *  answered from stored results don't count. Omitted = no cap. */
+  maxPasses: z.number().int().min(1).max(200_000).optional(),
   criterion: z.enum(['totalPnl', 'profitFactor', 'expectancy', 'maxDrawdown', 'recoveryFactor', 'sharpe', 'completionRate', 'complex']),
   inputs: z.record(InputSetting),
   /** Re-run every pass with costs x2 as well (cost-role inputs). */

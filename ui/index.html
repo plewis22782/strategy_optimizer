@@ -110,6 +110,7 @@ canvas{max-width:100%;height:auto;display:block}
         <select id="forward"><option value="0">None</option><option value="2">Last 1/2</option><option value="3" selected>Last 1/3</option><option value="4">Last 1/4</option></select></label>
       <label class="f">Search
         <select id="search"><option value="genetic" selected>Genetic (fast)</option><option value="grid">Complete grid (slow)</option></select></label>
+      <label class="f">Passes (max) <input type="number" id="maxPasses" min="1" max="200000" step="1" placeholder="no cap"></label>
       <label class="f">Optimize for
         <select id="criterion">
           <option value="complex" selected>Complex (P&amp;L − ½·drawdown)</option><option value="totalPnl">Total P&amp;L</option>

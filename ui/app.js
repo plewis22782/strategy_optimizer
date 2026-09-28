@@ -178,6 +178,7 @@ function buildSpec() {
     to: $('to').value,
     forward: +fwd,
     search: $('search').value,
+    maxPasses: Math.floor(+$('maxPasses').value) > 0 ? Math.floor(+$('maxPasses').value) : undefined,
     criterion: $('criterion').value,
     inputs,
     costStress: $('costStress').checked,
@@ -204,8 +205,12 @@ function summary() {
   const nF = f ? Math.max(1, Math.round(inRange.length / f)) : 0
   const nB = inRange.length - nF
   const grid = $('search').value === 'grid' || combos <= (+$('population').value || 64) * 2
-  const passes = grid ? combos : Math.min(combos, (+$('population').value || 64) * (+$('maxGen').value || 40))
-  if ($('search').value === 'grid' && combos > 20000) warns.push(`A complete grid of ${fmtN(combos)} passes is too big (max 20,000) — use Genetic`)
+  const cap = Math.floor(+$('maxPasses').value) || 0
+  const uncapped = grid ? combos : Math.min(combos, (+$('population').value || 64) * (+$('maxGen').value || 40))
+  const passes = cap ? Math.min(cap, uncapped) : uncapped
+  const sampled = grid && cap > 0 && cap < combos
+  if (grid && passes > 20000) warns.push(`${fmtN(passes)} grid passes is too many (max 20,000) — set Passes (max) or use Genetic`)
+  if (grid && sampled && combos > 5e6) warns.push(`A grid of ${fmtN(combos)} combinations is too large to sample — use Genetic`)
   if (!cur.replayable.ok) warns.push(`Can't replay this strategy yet: ${cur.replayable.why}`)
   else if (!nB) warns.push('No usable sessions in this date range')
   const threads = Math.min(meta.maxThreads, Math.max(1, +$('threads').value || 1))
@@ -215,7 +220,7 @@ function summary() {
   $('nOpt').textContent = nOpt
   $('combos').textContent = fmtN(combos)
   $('sessSplit').textContent = `${nB} / ${nF}`
-  $('passes').textContent = grid ? fmtN(passes) : `up to ${fmtN(passes)}`
+  $('passes').textContent = sampled ? `${fmtN(passes)} (random sample of ${fmtN(combos)})` : grid ? fmtN(passes) : `up to ${fmtN(passes)}`
   $('eta').textContent = `≤ ${dur(secs)} on ${threads} threads`
   $('warns').innerHTML = warns.map((w) => `<li>${esc(w)}</li>`).join('')
   $('start').disabled = warns.length > 0
@@ -269,7 +274,8 @@ document.addEventListener('input', (e) => {
   }
 })
 $('strategy').addEventListener('change', (e) => selectStrategy(e.target.value))
-;['from', 'forward', 'search', 'threads', 'population', 'maxGen', 'costStress'].forEach((id) => $(id).addEventListener('change', summary))
+;['from', 'forward', 'search', 'threads', 'population', 'maxGen', 'costStress', 'maxPasses'].forEach((id) => $(id).addEventListener('change', summary))
+$('maxPasses').addEventListener('input', summary)
 $('to').addEventListener('change', loadSessions)
 $('scopes').addEventListener('click', (e) => {
   const sc = e.target.dataset?.scope

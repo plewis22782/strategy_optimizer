@@ -227,13 +227,25 @@ export async function executeRun(ctx: RunCtx, runId: number, spec: TestSpec): Pr
 
   const useGrid = spec.search === 'grid' || space.combinations <= spec.genetic.population * 2
   if (useGrid) {
-    if (space.combinations > GRID_MAX) throw new Error(`complete grid has ${space.combinations} passes (max ${GRID_MAX}) -- use genetic`)
+    const gridPasses = spec.maxPasses ? Math.min(spec.maxPasses, space.combinations) : space.combinations
+    if (gridPasses > GRID_MAX) throw new Error(`complete grid has ${space.combinations} passes (max ${GRID_MAX}) -- set a pass budget or use genetic`)
+    if (space.combinations > 5_000_000) throw new Error(`grid of ${space.combinations} combinations is too large to sample -- use genetic`)
     const all: number[][] = []
     const walk = (i: number, acc: number[]) => {
       if (i === dims.length) return void all.push([...acc])
       for (let j = 0; j < dims[i].values.length; j++) walk(i + 1, [...acc, j])
     }
     walk(0, [])
+    if (spec.maxPasses && all.length > spec.maxPasses) {
+      // seeded Fisher-Yates, keep the first maxPasses: a repeatable random sample
+      const rand = rng(spec.genetic.seed)
+      for (let i = all.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1))
+        ;[all[i], all[j]] = [all[j], all[i]]
+      }
+      all.length = spec.maxPasses
+      logger.info({ runId, sampled: spec.maxPasses, of: space.combinations }, 'optimizer: grid larger than the pass budget -- random sample')
+    }
     total = all.length
     await progress(true)
     await evaluateAll(all, 'back', back)
@@ -250,11 +262,22 @@ export async function executeRun(ctx: RunCtx, runId: number, spec: TestSpec): Pr
     }
     let population: number[][] = [nearestDefault()]
     while (population.length < g.population) population.push(fresh(randomGenome))
-    total = g.population * g.maxGenerations
+    total = spec.maxPasses ? Math.min(spec.maxPasses, g.population * g.maxGenerations) : g.population * g.maxGenerations
     let stall = 0
     let bestSoFar = -Infinity
+    let spent = 0 // passes that cost a run; genomes already evaluated are free
     for (generation = 0; generation < g.maxGenerations; generation++) {
       if (ctx.cancelled()) break
+      if (spec.maxPasses) {
+        const left = spec.maxPasses - spent
+        if (left <= 0) {
+          logger.info({ runId, generation, maxPasses: spec.maxPasses }, 'optimizer: pass budget reached')
+          break
+        }
+        let fresh = 0
+        population = population.filter((gen) => memo.has(`back|${genomeKey(gen)}`) || ++fresh <= left)
+        spent += Math.min(fresh, left)
+      }
       await progress(true)
       const res = await evaluateAll(population, 'back', back)
       const scored = population
