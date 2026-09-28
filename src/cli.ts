@@ -199,7 +199,12 @@ async function main(): Promise<void> {
       }
 
       // accept
-      const golden = JSON.parse(await readFile(new URL('../test/fixtures/golden-nutterfly.json', import.meta.url), 'utf8')) as Array<{
+      // Every fixture = Strike Canopy's own bt_* backtest rows (+ event logs):
+      // the optimizer must reproduce them exactly at default params.
+      const fixtures = ['golden-nutterfly.json', 'golden-paperlab.json']
+      const golden = (
+        await Promise.all(fixtures.map(async (f) => JSON.parse(await readFile(new URL(`../test/fixtures/${f}`, import.meta.url), 'utf8'))))
+      ).flat() as Array<{
         mode: string
         date: string
         outcome: string
