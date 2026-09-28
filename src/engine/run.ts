@@ -135,6 +135,13 @@ export async function executeRun(ctx: RunCtx, runId: number, spec: TestSpec): Pr
     .map(([k]) => k)
 
   const store = new ResultsStore(db, ctx.dataRoot, ctx.scRef)
+  // A DayPack going from usable to failing between usableSessions' check at
+  // run start and a worker actually loading it -- e.g. a concurrent `opt
+  // pull` rewrote the manifest mid-run (found live 2026-09-28: a re-pull
+  // flipped 2026-09-16's spx_chain from passing to 379/397, one below the
+  // 380 threshold, mid-run, and killed a 14k-pass-deep run). Matches
+  // CachedWellClient.loadDay's own two error strings exactly.
+  const DAYPACK_UNAVAILABLE_RE = /^(no DayPack for|DayPack .* fails check)/
   // Stored result if this exact (strategy version, params, session, data) was
   // ever computed -- by this run or any earlier one; otherwise compute + store.
   async function runDays(params: Record<string, ParamValue>, dates: string[], tag: string): Promise<DayResult[]> {
@@ -143,9 +150,27 @@ export async function executeRun(ctx: RunCtx, runId: number, spec: TestSpec): Pr
         const key = await store.keyFor(ref, params, date)
         const hit = await store.get(key)
         if (hit) return hit
-        const r = await pool.run({ strategy: ref.key, params, date, mode: `opt_${runId}_${tag}` })
-        await store.put(key, ref, params, r.day, r.ms)
-        return r.day
+        try {
+          const r = await pool.run({ strategy: ref.key, params, date, mode: `opt_${runId}_${tag}` })
+          await store.put(key, ref, params, r.day, r.ms)
+          return r.day
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (!DAYPACK_UNAVAILABLE_RE.test(msg)) throw err // a real strategy-tick bug: still loud, still aborts the pass
+          const day: DayResult = {
+            date,
+            outcome: '(daypack unavailable mid-run)',
+            noEntry: true,
+            pnl: null,
+            result: null,
+            std: { outcome: '(daypack unavailable mid-run)', noEntry: true, pnl: null, basis: null, trades: 0 },
+            events: [],
+            tickErrors: 0,
+            firstError: msg,
+            cache: { chainHistoryHits: 0, snapshotDerived: 0, snapshotMisses: 0, barsCalls: 0 }
+          }
+          return day
+        }
       })
     )
   }
