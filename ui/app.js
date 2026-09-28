@@ -628,7 +628,8 @@ function drawProg() {
   x.lineTo(W - R, H - B)
   x.stroke()
   pts.forEach((p, i) => {
-    x.fillStyle = css('--accent')
+    const pnl = p.metrics?.totalPnl
+    x.fillStyle = pnl == null ? css('--mute') : pnl >= 0 ? css('--good') : css('--bad')
     x.globalAlpha = 0.25 + 0.75 * ((p.generation ?? 0) / Math.max(1, maxGen))
     const X = L + (i / Math.max(1, pts.length - 1)) * (W - L - R)
     const Y = T + (1 - (hi > lo ? (p.criterion - lo) / (hi - lo) : 0.5)) * (H - T - B)
