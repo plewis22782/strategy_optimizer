@@ -49,3 +49,8 @@ export function requireChecks(def: StrategyDefinition<any>): string[] {
   }
   return [...out]
 }
+
+/** The variant's starting params (its declared defaults), for the UI. */
+export function variantDefaults(ref: StrategyRef): Record<string, ParamValue> {
+  return variantParams(ref.def, ref.variant) as Record<string, ParamValue>
+}

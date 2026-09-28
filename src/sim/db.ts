@@ -80,6 +80,39 @@ export async function ensureResultsSchema(admin: pg.Pool): Promise<void> {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_passes_run ON passes (run_id, phase, criterion DESC);
+    -- 2026-09-28: search engine + UI
+    ALTER TABLE runs   ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+    ALTER TABLE runs   ADD COLUMN IF NOT EXISTS progress JSONB;      -- phase/generation/evaluated/best, updated live
+    ALTER TABLE runs   ADD COLUMN IF NOT EXISTS sessions JSONB;      -- {back:[], forward:[], skipped:[{date,why}]}
+    ALTER TABLE runs   ADD COLUMN IF NOT EXISTS space JSONB;         -- {dims:[{name,values}], combinations}
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS genome TEXT;         -- value index per optimized input
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS back_pass_id BIGINT; -- forward pass -> its back-test pass
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS stress JSONB;        -- metrics with costs x2 (costStress runs)
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS ms INTEGER;          -- wall time of the pass
+    CREATE INDEX IF NOT EXISTS idx_passes_run_gen ON passes (run_id, phase, id);
+    -- Permanent per-session backtest results, shared by EVERY run: a result
+    -- is computed once and reused forever (the user's rule: never spend
+    -- compute repeating a test). Key = strategy id + definition version +
+    -- canonical params + session date + the DayPack's data fingerprint, so it
+    -- changes only when the strategy's behaviour (version bump) or the data
+    -- does. Rows with tick errors are never stored.
+    CREATE TABLE IF NOT EXISTS day_results (
+      key          TEXT PRIMARY KEY,           -- sha256 of the parts below
+      strategy_id  TEXT NOT NULL,
+      version      INTEGER NOT NULL,
+      date         DATE NOT NULL,
+      params       JSONB NOT NULL,
+      pack_sha     TEXT NOT NULL,
+      sc_ref       TEXT NOT NULL,              -- audit: the Strike Canopy code that produced it
+      outcome      TEXT,
+      no_entry     BOOLEAN NOT NULL,
+      pnl          DOUBLE PRECISION,
+      result       JSONB,
+      std          JSONB NOT NULL,
+      ms           INTEGER,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_day_results_strat ON day_results (strategy_id, version, date);
     CREATE TABLE IF NOT EXISTS pass_days (
       pass_id     BIGINT NOT NULL REFERENCES passes(id) ON DELETE CASCADE,
       date        DATE NOT NULL,

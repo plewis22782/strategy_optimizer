@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f4; --panel:#ffffff; --ink:#18201d; --mute:#5f6b66; --faint:#8b9691; --line:#dde3e0; --line2:#eef2f0;
+  --accent:#0f7a5a; --accent-soft:#e2f2ec; --warn:#a15c00; --warn-soft:#fbf0de; --bad:#b3261e; --good:#0f7a5a; --chip:#eef2f0;
+  --logic:#0f7a5a; --risk:#8a4fb8; --sizing:#2f6db5; --cost:#a15c00; --never:#8b9691; --input:#fbfcfb;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#101513; --panel:#171e1b; --ink:#e6ece9; --mute:#9aa7a1; --faint:#6f7c76; --line:#28322e; --line2:#1f2825;
+  --accent:#3fc294; --accent-soft:#16312a; --warn:#e0a54a; --warn-soft:#2e2414; --bad:#ef7a70; --good:#3fc294; --chip:#1f2825;
+  --logic:#3fc294; --risk:#b98ae0; --sizing:#6fa3e6; --cost:#e0a54a; --never:#6f7c76; --input:#121916; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#101513; --panel:#171e1b; --ink:#e6ece9; --mute:#9aa7a1; --faint:#6f7c76; --line:#28322e; --line2:#1f2825;
+  --accent:#3fc294; --accent-soft:#16312a; --warn:#e0a54a; --warn-soft:#2e2414; --bad:#ef7a70; --good:#3fc294; --chip:#1f2825;
+  --logic:#3fc294; --risk:#b98ae0; --sizing:#6fa3e6; --cost:#e0a54a; --never:#6f7c76; --input:#121916; color-scheme:dark; }
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+.wrap{max-width:1360px;margin:0 auto;padding-inline:16px;padding-block:16px 48px;display:grid;gap:14px}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+h1{font-size:18px;font-weight:600;margin:0}
+.sub{color:var(--mute);font-size:12.5px}
+.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;justify-content:space-between}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;min-width:0}
+.phead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+.phead h2{font-size:12.5px;font-weight:600;margin:0;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:12px 14px}
+label.f{display:grid;gap:4px;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+select,input[type=number],input[type=text],input[type=date],input[type=time]{
+  font:inherit;font-size:13px;color:var(--ink);background:var(--input);border:1px solid var(--line);border-radius:4px;padding:5px 7px;width:100%;text-transform:none;letter-spacing:0}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+details.adv{padding:0 14px 12px}
+details.adv summary{cursor:pointer;font-size:12.5px;color:var(--mute)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:1000px){.grid2{grid-template-columns:1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:999px;padding:3px 10px;cursor:pointer}
+.chips button:hover{border-color:var(--accent)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:500;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.sort{cursor:pointer}
+th.r,td.r{text-align:right}
+td{padding:5px 8px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr.group td{background:var(--bg);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);padding:6px 8px}
+tr.idle td:not(.c-opt):not(.c-name){opacity:.55}
+tr.never td{color:var(--faint)}
+tbody.click tr{cursor:pointer}
+tbody.click tr:hover td{background:var(--accent-soft)}
+tr.sel td{background:var(--accent-soft)}
+.pname{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+.doc{color:var(--mute);font-size:12px;max-width:340px}
+.role{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+td.in input[type=number]{width:80px;text-align:right}
+td.in input[type=time]{width:96px}
+td.in select{width:auto}
+.cnt{font-family:"IBM Plex Mono",monospace;font-size:12.5px;text-align:right;white-space:nowrap}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px}
+.bad{color:var(--bad)} .good{color:var(--good)}
+.side{display:grid;gap:14px}
+.stat{padding:12px 14px;display:grid;gap:9px}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.kv span:first-child{color:var(--mute)}
+.big{font-size:22px;font-weight:600}
+.warn{margin:0;padding-left:18px;font-size:12.5px;color:var(--warn)}
+.btn{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:0;border-radius:5px;padding:9px 12px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line);font-weight:500;padding:5px 10px}
+.msg{font-size:12.5px}
+.tabs{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);padding:0 14px}
+.tabs button{font:inherit;font-size:12.5px;background:none;border:0;border-bottom:2px solid transparent;color:var(--mute);padding:8px 10px;cursor:pointer}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pad{padding:12px 14px}
+.bar{height:6px;background:var(--line2);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0}
+canvas{max-width:100%;height:auto;display:block}
+.axes{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}
+.axes label.f{min-width:170px}
+.pill{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--mute);font-weight:500;white-space:nowrap}
+.pill.running{background:var(--accent-soft);color:var(--accent)}
+.pill.error{background:var(--warn-soft);color:var(--bad)}
+.events{font-family:"IBM Plex Mono",monospace;font-size:12px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px;max-height:320px;overflow:auto}
+.empty{color:var(--faint);font-size:13px;padding:18px 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Strategy Optimizer</h1>
+      <div class="sub" id="metaLine">Loading…</div>
+    </div>
+  </div>
+
+  <section class="panel" aria-label="Test setup">
+    <div class="phead"><h2>Test setup</h2><span class="sub" id="sessLine"></span></div>
+    <div class="setup">
+      <label class="f">Strategy <select id="strategy"></select></label>
+      <label class="f">From <input type="date" id="from" value="2026-08-28"></label>
+      <label class="f">To <input type="date" id="to"></label>
+      <label class="f">Forward test
+        <select id="forward"><option value="0">None</option><option value="2">Last 1/2</option><option value="3" selected>Last 1/3</option><option value="4">Last 1/4</option></select></label>
+      <label class="f">Search
+        <select id="search"><option value="genetic" selected>Genetic (fast)</option><option value="grid">Complete grid (slow)</option></select></label>
+      <label class="f">Optimize for
+        <select id="criterion">
+          <option value="complex" selected>Complex (P&amp;L − ½·drawdown)</option><option value="totalPnl">Total P&amp;L</option>
+          <option value="profitFactor">Profit factor</option><option value="expectancy">Expected payoff</option>
+          <option value="maxDrawdown">Min drawdown</option><option value="recoveryFactor">Recovery factor</option>
+          <option value="sharpe">Sharpe</option><option value="completionRate">Completion rate</option></select></label>
+      <label class="f">Threads <input type="number" id="threads" min="1"></label>
+    </div>
+    <details class="adv">
+      <summary>Genetic settings and extras</summary>
+      <div class="setup" style="padding-inline:0">
+        <label class="f">Population <input type="number" id="population" value="64" min="8" max="512"></label>
+        <label class="f">Max generations <input type="number" id="maxGen" value="40" min="1" max="500"></label>
+        <label class="f">Stop after N flat generations <input type="number" id="stall" value="8" min="1" max="100"></label>
+        <label class="f">Random seed <input type="number" id="seed" value="1"></label>
+        <label class="f">Cost stress <span class="chk"><input type="checkbox" id="costStress"> also run every pass at 2× costs</span></label>
+        <label class="f">Note <input type="text" id="note" placeholder="what this run is testing"></label>
+      </div>
+    </details>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" aria-label="Inputs">
+      <div class="phead">
+        <h2>Inputs</h2>
+        <div class="chips" id="scopes">
+          <button data-scope="all">All searchable</button>
+          <button data-scope="logic">Logic only</button>
+          <button data-scope="risk">Risk &amp; sizing</button>
+          <button data-scope="times">Times</button>
+          <button data-scope="switches">Switches</button>
+          <button data-scope="none">Clear</button>
+          <button data-scope="reset">Reset values</button>
+        </div>
+      </div>
+      <div class="tbl"><table style="min-width:900px">
+        <thead><tr><th>Optimize</th><th>Input</th><th>What it does</th><th>Fixed value</th><th>Start</th><th>Step</th><th>Stop</th><th class="r">Values</th></tr></thead>
+        <tbody id="inputs"></tbody>
+      </table></div>
+    </section>
+
+    <aside class="side">
+      <section class="panel stat" aria-label="Run size">
+        <div class="kv"><span>Inputs optimized</span><b class="mono" id="nOpt">0</b></div>
+        <div><div class="sub">Combinations</div><div class="big mono" id="combos">1</div></div>
+        <div class="kv"><span>Sessions back / forward</span><span class="mono" id="sessSplit">—</span></div>
+        <div class="kv"><span>Passes to run</span><span class="mono" id="passes">—</span></div>
+        <div class="kv"><span>Estimated time</span><span class="mono" id="eta">—</span></div>
+        <ul class="warn" id="warns"></ul>
+        <button class="btn" id="start" type="button">Start optimization</button>
+        <div class="msg" id="startMsg" role="status"></div>
+      </section>
+      <section class="panel stat" aria-label="Rules">
+        <div class="sub" style="text-transform:uppercase;letter-spacing:.05em">Rules every pass obeys</div>
+        <div class="mono" style="font-size:12px;line-height:1.7" id="rules"></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="panel" aria-label="Runs">
+    <div class="phead"><h2>Runs</h2><button class="btn ghost" id="refreshRuns" type="button">Refresh</button></div>
+    <div class="tbl"><table>
+      <thead><tr><th>#</th><th>Strategy</th><th>Search</th><th>Criterion</th><th>Status</th><th class="r">Passes</th><th>Started</th><th>Note</th></tr></thead>
+      <tbody id="runs" class="click"></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel" aria-label="Results" id="results" hidden>
+    <div class="phead"><h2 id="resTitle">Results</h2><div style="display:flex;gap:8px;align-items:center"><span class="sub mono" id="resProg"></span><button class="btn ghost" id="cancel" type="button" hidden>Cancel run</button></div></div>
+    <div class="pad" style="padding-bottom:0"><div class="bar"><i id="progBar"></i></div><div class="sub" id="resSess" style="padding-top:6px"></div></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-t="table">Passes</button>
+      <button role="tab" aria-selected="false" data-t="heat">2-D heatmap</button>
+      <button role="tab" aria-selected="false" data-t="line">1-D</button>
+      <button role="tab" aria-selected="false" data-t="prog">Genetic progress</button>
+      <button role="tab" aria-selected="false" data-t="fwd">Forward results</button>
+    </div>
+    <div id="tab-table" class="tbl"><table><thead id="passHead"></thead><tbody id="passRows" class="click mono"></tbody></table></div>
+    <div id="tab-heat" class="pad" hidden>
+      <div class="axes"><label class="f">X <select id="hx"></select></label><label class="f">Y <select id="hy"></select></label><span class="sub">Colour = best criterion of any pass with those two values</span></div>
+      <canvas id="heat" width="1000" height="420"></canvas>
+    </div>
+    <div id="tab-line" class="pad" hidden>
+      <div class="axes"><label class="f">Input <select id="lx"></select></label><span class="sub">Every pass as a dot; the line is the best at each value</span></div>
+      <canvas id="line" width="1000" height="320"></canvas>
+    </div>
+    <div id="tab-prog" class="pad" hidden><canvas id="prog" width="1000" height="320"></canvas><div class="sub">Every back-test pass in the order it ran; colour darkens with each generation.</div></div>
+    <div id="tab-fwd" class="tbl" hidden><table><thead><tr><th>Pass</th><th>Inputs</th><th class="r">Back criterion</th><th class="r">Back P&amp;L</th><th class="r">Forward criterion</th><th class="r">Forward P&amp;L</th><th class="r">Forward trades</th></tr></thead><tbody id="fwdRows" class="click mono"></tbody></table></div>
+  </section>
+
+  <section class="panel" aria-label="Pass detail" id="passPanel" hidden>
+    <div class="phead"><h2 id="passTitle">Pass</h2><span class="sub">Click a session to replay it with the full trade log</span></div>
+    <div class="pad" id="passParams" style="font-size:12.5px"></div>
+    <div class="tbl"><table><thead><tr><th>Session</th><th>Outcome</th><th class="r">P&amp;L</th><th class="r">Trades</th></tr></thead><tbody id="passDays" class="click mono"></tbody></table></div>
+    <div class="pad"><div class="events" id="events" hidden></div></div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -15,6 +15,7 @@ services:
       POSTGRES_DB: optimizer
     # Sim tables are UNLOGGED scratch; keep fsync on for the results tables.
     command: ["postgres", "-c", "shared_buffers=1GB", "-c", "max_connections=200", "-c", "synchronous_commit=off"]
+    cpus: "6" # scratch + results DB; counted against Redfish's budget too
     volumes:
       - ${OPT_HOST_DATA:-/mnt/data/optimizer}/pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -39,4 +40,33 @@ services:
       - ./vendor/strike-canopy:/app/vendor/strike-canopy:ro
       - ./test:/app/test:ro
       - ./examples:/app/examples:ro
+      - ${OPT_HOST_DATA:-/mnt/data/optimizer}/cache:/data
+
+  # The web UI + API + run queue (port 8430 on the LAN). Worker processes
+  # are forked INSIDE this container, so `cpus` is a hard ceiling on the
+  # whole optimizer: Redfish has 72 threads and the local AI uses about
+  # half, so the optimizer is held to OPT_MAX_THREADS (default 30).
+  server:
+    image: strategy-optimizer-runner
+    container_name: strategy-optimizer-server
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      OPT_MAX_THREADS: "${OPT_MAX_THREADS:-30}"
+      OPT_PORT: "8430"
+      LOG_LEVEL: info
+    command: ["node", "--import", "tsx", "src/server/server.ts"]
+    cpus: "${OPT_MAX_THREADS:-30}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${OPT_BIND:-192.168.4.31}:8430:8430"
+    volumes:
+      - ./src:/app/src:ro
+      - ./ui:/app/ui:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./vendor/strike-canopy:/app/vendor/strike-canopy:ro
+      - ./vendor/strike-canopy.ref:/app/vendor/strike-canopy.ref:ro
       - ${OPT_HOST_DATA:-/mnt/data/optimizer}/cache:/data

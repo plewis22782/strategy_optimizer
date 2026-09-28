@@ -16,6 +16,25 @@ export interface CacheStats {
   barsCalls: number
 }
 
+// Parsed pack files, shared by every CachedWellClient in this process: a
+// worker replays the same few sessions over and over (one per pass), so
+// gunzip + JSON.parse once per file, not once per pass. Small LRU; a day is
+// tens of MB parsed, and Redfish has the RAM for it.
+const PACK_LRU_MAX = Number(process.env.OPT_PACK_CACHE_FILES ?? 40)
+const packLru = new Map<string, unknown>()
+async function readPackFile<T>(file: string): Promise<T> {
+  const hit = packLru.get(file)
+  if (hit !== undefined) {
+    packLru.delete(file)
+    packLru.set(file, hit)
+    return hit as T
+  }
+  const v = await readJsonGz<T>(file)
+  packLru.set(file, v)
+  while (packLru.size > PACK_LRU_MAX) packLru.delete(packLru.keys().next().value as string)
+  return v
+}
+
 export class CachedWellClient extends WellClient {
   private chains = new Map<string, ChainPayload>()
   private bars = new Map<BarsTable, BarsPayload[]>()
@@ -35,11 +54,11 @@ export class CachedWellClient extends WellClient {
     }
     const dir = packDir(root, date)
     for (const c of man.chains) {
-      const p = await readJsonGz<ChainPayload>(path.join(dir, c.file))
+      const p = await readPackFile<ChainPayload>(path.join(dir, c.file))
       this.chains.set(chainMapKey(p.key.symbol, p.key.expiration), p)
     }
     for (const b of man.bars) {
-      const p = await readJsonGz<BarsPayload>(path.join(dir, b.file))
+      const p = await readPackFile<BarsPayload>(path.join(dir, b.file))
       const arr = this.bars.get(b.table) ?? []
       arr.push(p)
       this.bars.set(b.table, arr)
