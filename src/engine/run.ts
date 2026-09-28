@@ -49,7 +49,7 @@ export async function usableSessions(
   from: string,
   to: string
 ): Promise<{ usable: string[]; skipped: Array<{ date: string; why: string }> }> {
-  const need = requireChecks(ref.def)
+  const need = requireChecks(ref)
   const usable: string[] = []
   const skipped: Array<{ date: string; why: string }> = []
   for (const d of weekdays(from, to)) {

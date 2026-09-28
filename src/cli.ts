@@ -176,7 +176,7 @@ async function main(): Promise<void> {
       const specs = Object.entries(ref.def.params) as Array<[string, ParamSpec]>
       const tunable = specs.filter(([, s]) => TUNABLE_ROLES.includes(s.role))
       const lint = lintDefinition(ref.def)
-      const rp = replayable(ref.def)
+      const rp = replayable(ref)
       console.log(
         `${ref.key.padEnd(18)} ${ref.mode.padEnd(19)} ${String(specs.length).padStart(2)} inputs ${String(tunable.length).padStart(2)} searchable  ` +
           `${rp.ok ? 'REPLAYABLE' : `not replayable: ${rp.why}`}${lint.length ? `  LINT: ${lint.join('; ')}` : ''}`
