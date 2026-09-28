@@ -187,6 +187,7 @@ canvas{max-width:100%;height:auto;display:block}
       <button role="tab" aria-selected="false" data-t="line">1-D</button>
       <button role="tab" aria-selected="false" data-t="prog">Genetic progress</button>
       <button role="tab" aria-selected="false" data-t="fwd">Forward results</button>
+      <button role="tab" aria-selected="false" data-t="ai">AI analysis</button>
     </div>
     <div id="tab-table" class="tbl"><table><thead id="passHead"></thead><tbody id="passRows" class="click mono"></tbody></table></div>
     <div id="tab-heat" class="pad" hidden>
@@ -199,6 +200,10 @@ canvas{max-width:100%;height:auto;display:block}
     </div>
     <div id="tab-prog" class="pad" hidden><canvas id="prog" width="1000" height="320"></canvas><div class="sub">Every back-test pass in the order it ran; green = profitable, red = unprofitable, fading in with each generation.</div></div>
     <div id="tab-fwd" class="tbl" hidden><table><thead><tr><th>Pass</th><th>Inputs</th><th class="r">Back criterion</th><th class="r">Back P&amp;L</th><th class="r">Forward criterion</th><th class="r">Forward P&amp;L</th><th class="r">Forward trades</th></tr></thead><tbody id="fwdRows" class="click mono"></tbody></table></div>
+    <div id="tab-ai" class="pad" hidden>
+      <div class="axes"><button class="btn" id="runAi" type="button">Run analysis</button><span class="sub mono" id="aiStatus"></span></div>
+      <div id="aiBody"></div>
+    </div>
   </section>
 
   <section class="panel" aria-label="Pass detail" id="passPanel" hidden>

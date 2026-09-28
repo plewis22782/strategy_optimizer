@@ -13,6 +13,8 @@
 //   GET  /api/runs/:id/passes?phase=back|forward
 //   GET  /api/passes/:id                 pass + per-session results
 //   POST /api/passes/:id/replay?date=    re-run one session with its trade log
+//   POST /api/runs/:id/analysis          compute + narrate (on-demand, overwrites)
+//   GET  /api/runs/:id/analysis          stored analysis, if any
 import 'dotenv/config'
 import http from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -27,13 +29,19 @@ import { buildSpace, TestSpec } from '../engine/space.js'
 import { executeRun, usableSessions } from '../engine/run.js'
 import { WorkerPool } from '../engine/pool.js'
 import { TUNABLE_ROLES } from '../sc.js'
+import { analyzeRun } from '../analysis/index.js'
 
 const Env = z.object({
   DATABASE_URL: z.string().min(1),
   OPT_DATA_DIR: z.string().default('/data'),
   OPT_MAX_THREADS: z.coerce.number().int().min(1).max(72).default(30),
   OPT_PORT: z.coerce.number().int().default(8430),
-  LOG_LEVEL: z.string().default('info')
+  LOG_LEVEL: z.string().default('info'),
+  // AI analysis backend: Redfish's local Ollama by default (reached from
+  // inside this container via the host-gateway alias, see docker-compose.yml).
+  OPT_OLLAMA_URL: z.string().default('http://host.docker.internal:11434'),
+  OPT_OLLAMA_MODEL: z.string().default('qwen3:30b-a3b-ctx32k'),
+  OPT_OLLAMA_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300_000)
 })
 const env = Env.parse(process.env)
 const logger = pino({ level: env.LOG_LEVEL })
@@ -107,7 +115,7 @@ async function body(req: http.IncomingMessage): Promise<unknown> {
 const idOf = (m: RegExpMatchArray) => Number(m[1])
 
 // ---- API ----------------------------------------------------------------------------
-route('GET', /^\/api\/meta$/, async () => ({ maxThreads: env.OPT_MAX_THREADS, strikeCanopyRef: scRef, activeRun: active?.id ?? null }))
+route('GET', /^\/api\/meta$/, async () => ({ maxThreads: env.OPT_MAX_THREADS, strikeCanopyRef: scRef, activeRun: active?.id ?? null, ollamaModel: env.OPT_OLLAMA_MODEL }))
 
 route('GET', /^\/api\/strategies$/, async () =>
   listStrategies().map((ref) => ({
@@ -213,6 +221,33 @@ route('POST', /^\/api\/passes\/(\d+)\/replay$/, async (_req, url, m) => {
   replayPool ??= new WorkerPool(1)
   const r = await replayPool.run({ strategy: rows[0].strategy, params: rows[0].params, date, mode: `replay_${idOf(m)}`, keepEvents: true })
   return r.day
+})
+
+const analysisInFlight = new Set<number>()
+route('POST', /^\/api\/runs\/(\d+)\/analysis$/, async (_req, _url, m) => {
+  const id = idOf(m)
+  const { rows } = await db.query<{ status: string }>(`SELECT status FROM runs WHERE id = $1`, [id])
+  if (!rows[0]) throw new HttpError(404, 'no such run')
+  if (rows[0].status === 'running' || rows[0].status === 'queued') throw new HttpError(400, 'run is still in progress')
+  const { rows: cnt } = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM passes WHERE run_id = $1 AND phase = 'back' AND criterion IS NOT NULL`,
+    [id]
+  )
+  if (cnt[0].n < 2) throw new HttpError(400, 'not enough finished passes to analyze')
+  if (analysisInFlight.has(id)) throw new HttpError(409, 'analysis already running for this run')
+  analysisInFlight.add(id)
+  try {
+    return await analyzeRun(db, id, { url: env.OPT_OLLAMA_URL, model: env.OPT_OLLAMA_MODEL, timeoutMs: env.OPT_OLLAMA_TIMEOUT_MS })
+  } finally {
+    analysisInFlight.delete(id)
+  }
+})
+
+route('GET', /^\/api\/runs\/(\d+)\/analysis$/, async (_req, _url, m) => {
+  const { rows } = await db.query<{ analysis: unknown }>(`SELECT analysis FROM runs WHERE id = $1`, [idOf(m)])
+  if (!rows[0]) throw new HttpError(404, 'no such run')
+  if (!rows[0].analysis) throw new HttpError(404, 'no analysis yet')
+  return rows[0].analysis
 })
 
 // ---- server ---------------------------------------------------------------------------

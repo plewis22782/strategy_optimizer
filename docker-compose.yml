@@ -56,8 +56,15 @@ services:
       OPT_MAX_THREADS: "${OPT_MAX_THREADS:-30}"
       OPT_PORT: "8430"
       LOG_LEVEL: info
+      # AI analysis (on-demand, src/analysis): Redfish's own Ollama, reached
+      # via the host-gateway alias since it's bound to the host's 127.0.0.1
+      # only and this container is on its own bridge network.
+      OPT_OLLAMA_URL: "${OPT_OLLAMA_URL:-http://host.docker.internal:11434}"
+      OPT_OLLAMA_MODEL: "${OPT_OLLAMA_MODEL:-qwen3:30b-a3b-ctx32k}"
     command: ["node", "--import", "tsx", "src/server/server.ts"]
     cpus: "${OPT_MAX_THREADS:-30}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

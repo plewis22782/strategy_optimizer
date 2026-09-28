@@ -461,7 +461,7 @@ document.querySelectorAll('[role=tab]').forEach((tb) =>
   tb.addEventListener('click', () => {
     document.querySelectorAll('[role=tab]').forEach((o) => o.setAttribute('aria-selected', String(o === tb)))
     activeTab = tb.dataset.t
-    for (const k of ['table', 'heat', 'line', 'prog', 'fwd']) $(`tab-${k}`).hidden = k !== activeTab
+    for (const k of ['table', 'heat', 'line', 'prog', 'fwd', 'ai']) $(`tab-${k}`).hidden = k !== activeTab
     renderActiveTab()
   })
 )
@@ -483,6 +483,7 @@ function renderActiveTab() {
   }
   if (activeTab === 'prog') drawProg()
   if (activeTab === 'fwd') renderFwd()
+  if (activeTab === 'ai') renderAi()
 }
 ;['hx', 'hy'].forEach((id) => $(id).addEventListener('change', drawHeat))
 $('lx').addEventListener('change', drawLine)
@@ -659,6 +660,96 @@ function renderFwd() {
         .join('')
     : '<tr><td colspan="7" class="empty">No forward results (no forward period, or the back test is still running).</td></tr>'
 }
+
+// ---------- AI analysis ----------
+function mdToHtml(md) {
+  const lines = md.split('\n')
+  let h = ''
+  let inList = false
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (line.startsWith('## ')) {
+      if (inList) { h += '</ul>'; inList = false }
+      h += `<h4>${esc(line.slice(3))}</h4>`
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      if (!inList) { h += '<ul>'; inList = true }
+      h += `<li>${esc(line.slice(2))}</li>`
+    } else if (!line) {
+      if (inList) { h += '</ul>'; inList = false }
+    } else {
+      if (inList) { h += '</ul>'; inList = false }
+      h += `<p>${esc(line)}</p>`
+    }
+  }
+  if (inList) h += '</ul>'
+  return h
+}
+
+function renderAi() {
+  const run = passCache.run
+  if (!run) return
+  const eligible = run.status !== 'running' && run.status !== 'queued' && passCache.back.some((b) => b.criterion != null && isFinite(b.criterion))
+  $('runAi').disabled = !eligible
+  $('runAi').textContent = run.analysis ? 'Re-run analysis' : 'Run analysis'
+  if (!eligible) {
+    $('aiStatus').textContent = run.status === 'running' || run.status === 'queued' ? 'Run must finish first.' : 'No finished passes to analyze yet.'
+  } else if (!run.analysis) {
+    $('aiStatus').textContent = `Computes parameter sensitivity, outlier-robust re-ranking and overfit signals from this run's own passes, then asks ${meta.ollamaModel || 'the local model'} to write it up.`
+  } else {
+    $('aiStatus').textContent = `Last run ${new Date(run.analysis.computedAt).toLocaleString()} · ${run.analysis.model}`
+  }
+  $('aiBody').innerHTML = run.analysis ? renderAiReport(run.analysis) : ''
+}
+
+function renderAiReport(a) {
+  const s = a.summary
+  const sampleNote = s.thinSample ? `<p class="bad">Only ${s.sessionsBack} back-test sessions — treat this report as provisional.</p>` : ''
+  const sens = s.sensitivity
+    .map((d) => `<tr><td>${esc(d.name)}</td><td class="r">${d.etaSquared == null ? '—' : (d.etaSquared * 100).toFixed(0) + '%'}</td>
+      <td>${d.bestValue == null ? '—' : esc(label(d.bestValue))}</td><td>${esc(d.bestValueEdge || '—')}</td></tr>`)
+    .join('')
+  const outliers = s.outliers.passes
+    .filter((p) => p.rankChange !== 0)
+    .slice(0, 8)
+    .map((p) => `<tr><td>${p.passId}</td><td class="r">${p.rawRank}</td><td class="r">${p.robustRank}</td>
+      <td class="r ${p.rankChange > 0 ? 'bad' : 'good'}">${p.rankChange > 0 ? '−' : '+'}${Math.abs(p.rankChange)}</td>
+      <td class="r">${money(p.trimmedMeanPnl)}</td><td class="r">${money(p.worstSessionPnl)}</td></tr>`)
+    .join('')
+  const fwd = s.overfit.backForward
+    .slice(0, 8)
+    .map((p) => `<tr><td>${p.backPassId}</td><td class="r">${fmt(p.backCriterion)}</td><td class="r">${fmt(p.forwardCriterion)}</td>
+      <td class="r ${p.dropPct != null && p.dropPct < 0 ? 'bad' : ''}">${p.dropPct == null ? '—' : (p.dropPct * 100).toFixed(0) + '%'}</td></tr>`)
+    .join('')
+  const nbr = s.overfit.neighborStability
+    .map((n) => `<tr><td>${esc(n.dim)}</td><td>${esc(label(n.bestValue))}</td>
+      <td class="${n.verdict === 'spike' ? 'bad' : n.verdict === 'plateau' ? 'good' : ''}">${esc(n.verdict)}</td>
+      <td class="sub">${n.neighbors.map((x) => `${esc(label(x.value))}: ${fmt(x.delta)}`).join(', ') || '—'}</td></tr>`)
+    .join('')
+  return `${sampleNote}${mdToHtml(a.narrative)}
+    <h4>Parameter sensitivity (variance explained)</h4>
+    <div class="tbl"><table><thead><tr><th>Input</th><th class="r">Eta²</th><th>Best value</th><th>Range edge</th></tr></thead><tbody>${sens || '<tr><td colspan="4" class="empty">No optimized inputs.</td></tr>'}</tbody></table></div>
+    <h4>Top passes, raw vs. outlier-robust rank (only where the rank moved)</h4>
+    <div class="tbl"><table><thead><tr><th>Pass</th><th class="r">Raw rank</th><th class="r">Robust rank</th><th class="r">Change</th><th class="r">Trimmed mean P&amp;L</th><th class="r">Worst session</th></tr></thead><tbody>${outliers || '<tr><td colspan="6" class="empty">No re-ranking — raw and robust order agree.</td></tr>'}</tbody></table></div>
+    <h4>Back vs. forward (held-out) criterion</h4>
+    <div class="tbl"><table><thead><tr><th>Back pass</th><th class="r">Back</th><th class="r">Forward</th><th class="r">Change</th></tr></thead><tbody>${fwd || '<tr><td colspan="4" class="empty">No forward test on this run.</td></tr>'}</tbody></table></div>
+    <h4>Grid-neighbor stability of the best pass</h4>
+    <div class="tbl"><table><thead><tr><th>Input</th><th>Best value</th><th>Verdict</th><th>Neighbors (Δ criterion)</th></tr></thead><tbody>${nbr || '<tr><td colspan="4" class="empty">No optimized inputs.</td></tr>'}</tbody></table></div>
+    <p class="sub">${s.overfit.combinationsTried} combinations tried over ${s.sessionsBack} back-test sessions (${fmt(s.overfit.triedPerSession, 1)} per session)${s.genetic ? ` · genetic search ran ${s.genetic.generationsRun}/${s.genetic.maxGenerations} generations${s.genetic.hitFullBudget ? '' : ' (stalled early)'}` : ''}.</p>`
+}
+
+$('runAi').addEventListener('click', async () => {
+  if (selRun == null) return
+  $('runAi').disabled = true
+  $('aiStatus').textContent = 'Analyzing — this can take a couple of minutes on the local model…'
+  try {
+    const analysis = await api(`/api/runs/${selRun}/analysis`, { method: 'POST' })
+    passCache.run.analysis = analysis
+    renderAi()
+  } catch (e) {
+    $('aiStatus').textContent = `Failed: ${e.message}`
+    $('runAi').disabled = false
+  }
+})
 
 // ---------- pass drill-in ----------
 async function openPass(id) {

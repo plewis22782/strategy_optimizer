@@ -90,6 +90,8 @@ export async function ensureResultsSchema(admin: pg.Pool): Promise<void> {
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS stress JSONB;        -- metrics with costs x2 (costStress runs)
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS ms INTEGER;          -- wall time of the pass
     CREATE INDEX IF NOT EXISTS idx_passes_run_gen ON passes (run_id, phase, id);
+    -- 2026-09-28: AI analysis of a completed run (on-demand, see src/analysis)
+    ALTER TABLE runs   ADD COLUMN IF NOT EXISTS analysis JSONB;      -- {computedAt, model, summary, narrative}
     -- Permanent per-session backtest results, shared by EVERY run: a result
     -- is computed once and reused forever (the user's rule: never spend
     -- compute repeating a test). Key = strategy id + definition version +
