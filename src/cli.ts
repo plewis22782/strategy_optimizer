@@ -21,6 +21,7 @@ import { readManifest } from './daypack/pack.js'
 import { ensureSimSchema, simPool } from './sim/db.js'
 import { getStrategy, listStrategies, replayable, resolveParams, strategyForMode } from './strategies/registry.js'
 import { TUNABLE_ROLES, lintDefinition, type ParamSpec } from './sc.js'
+import { importScData } from './daypack/extras.js'
 import { runPassDay, type DayResult } from './engine/pass.js'
 import { criterionValue, passMetrics, type Criterion } from './engine/metrics.js'
 import { writeFile } from 'node:fs/promises'
@@ -159,6 +160,15 @@ async function main(): Promise<void> {
     return
   }
 
+  if (cmd === 'import-sc') {
+    // Attach Strike Canopy-computed inputs (npm run strategy:backtest-data) to
+    // the cached sessions: opt import-sc --dir <exported dir>
+    const dir = arg('dir')
+    if (!dir) throw new Error('--dir <path to the exported backtest-data>')
+    for (const line of await importScData(env.OPT_DATA_DIR, dir)) console.log(line)
+    return
+  }
+
   if (cmd === 'strategies') {
     // Everything registered in Strike Canopy's Paper Lab registry, with the
     // inputs the optimizer may search (tunable role + declared range).
@@ -201,7 +211,7 @@ async function main(): Promise<void> {
       // accept
       // Every fixture = Strike Canopy's own bt_* backtest rows (+ event logs):
       // the optimizer must reproduce them exactly at default params.
-      const fixtures = ['golden-nutterfly.json', 'golden-paperlab.json']
+      const fixtures = ['golden-nutterfly.json', 'golden-paperlab.json', 'golden-exhaustion.json']
       const golden = (
         await Promise.all(fixtures.map(async (f) => JSON.parse(await readFile(new URL(`../test/fixtures/${f}`, import.meta.url), 'utf8'))))
       ).flat() as Array<{
@@ -213,8 +223,25 @@ async function main(): Promise<void> {
       }>
       // Event text gained ", IV x%" in 0aa03c3 after the golden rows were made.
       const norm = (s: string) => s.replace(/, IV [^%)]*%/, '')
+      // Several reference rows for one (mode, session) = several positions
+      // that day (Exhaustion: one per condor); compare them as one day, the
+      // way the optimizer scores it. Rows are merged in position-id order
+      // when the fixture has ids, else by their first event time.
+      type G = (typeof golden)[number] & { id?: number }
+      const groups = new Map<string, G[]>()
+      for (const g of golden as G[]) groups.set(`${g.mode}|${g.date}`, [...(groups.get(`${g.mode}|${g.date}`) ?? []), g])
+      const merged = [...groups.values()].map((rows) => {
+        rows.sort((a, b) => (a.id ?? 0) - (b.id ?? 0) || (a.events[0]?.t ?? '').localeCompare(b.events[0]?.t ?? ''))
+        if (rows.length === 1) return rows[0]
+        return {
+          ...rows[0],
+          outcome: rows.map((r) => r.outcome).join(' | '),
+          totalPnl: rows.some((r) => r.totalPnl != null) ? rows.reduce((a, r) => a + (r.totalPnl ?? 0), 0) : null,
+          events: rows.flatMap((r) => r.events)
+        }
+      })
       let fails = 0
-      for (const g of golden) {
+      for (const g of merged) {
         // golden rows are Strike Canopy's bt_<x> backtest modes; the registry
         // knows the matching paper_<x> variant
         const ref = strategyForMode(g.mode.replace(/^bt_/, 'paper_'))

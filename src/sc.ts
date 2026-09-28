@@ -33,5 +33,7 @@ export type {
   TickContext
 } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/contract.js'
 
+export type { BacktestData } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/backtest-data.js'
+
 /** Strike Canopy's schema.sql, for the sim DB's strategy_* DDL. */
 export const SC_SCHEMA_SQL = new URL(`${SC}/../db/schema.sql`, import.meta.url)

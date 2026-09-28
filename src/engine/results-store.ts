@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { readManifest } from '../daypack/pack.js'
+import { extrasSha } from '../daypack/extras.js'
 import type { ParamValue, StrategyRef } from '../strategies/registry.js'
 import type { DayResult } from './pass.js'
 
@@ -30,19 +31,25 @@ export class ResultsStore {
     private readonly scRef: string
   ) {}
 
-  private async shaFor(date: string): Promise<string> {
-    let s = this.packSha.get(date)
+  /** Core data fingerprint + the fingerprints of the extras THIS strategy
+   *  reads (e.g. trend state) -- attaching an extra a strategy doesn't use
+   *  never invalidates its stored results. */
+  private async shaFor(date: string, ref: StrategyRef): Promise<string> {
+    const kinds = (ref.def.footprint.data as ReadonlyArray<{ kind: string }>).map((d) => d.kind)
+    const k = `${date}|${kinds.sort().join(',')}`
+    let s = this.packSha.get(k)
     if (!s) {
       const m = await readManifest(this.dataRoot, date)
       if (!m) throw new Error(`no DayPack for ${date}`)
-      s = m.sha256
-      this.packSha.set(date, s)
+      const ex = extrasSha(m, kinds)
+      s = ex ? `${m.sha256}+${createHash('sha256').update(ex).digest('hex')}` : m.sha256
+      this.packSha.set(k, s)
     }
     return s
   }
 
   async keyFor(ref: StrategyRef, params: Record<string, ParamValue>, date: string): Promise<string> {
-    const parts = [ref.def.id, String(ref.def.version), canonical(params), date, await this.shaFor(date)]
+    const parts = [ref.def.id, String(ref.def.version), canonical(params), date, await this.shaFor(date, ref)]
     return createHash('sha256').update(parts.join('\u0000')).digest('hex')
   }
 
@@ -79,7 +86,7 @@ export class ResultsStore {
     await this.db.query(
       `INSERT INTO day_results (key, strategy_id, version, date, params, pack_sha, sc_ref, outcome, no_entry, pnl, result, std, ms)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (key) DO NOTHING`,
-      [key, ref.def.id, ref.def.version, d.date, JSON.stringify(params), await this.shaFor(d.date), this.scRef,
+      [key, ref.def.id, ref.def.version, d.date, JSON.stringify(params), await this.shaFor(d.date, ref), this.scRef,
        d.outcome, d.noEntry, d.pnl, JSON.stringify(d.result), JSON.stringify(d.std), ms]
     )
   }

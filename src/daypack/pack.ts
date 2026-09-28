@@ -46,7 +46,13 @@ export interface Manifest {
   bars: Array<{ file: string; table: BarsTable; fromMs: number; toMs: number; rows: number; rthRows: number }>
   /** Why this day is (not) usable for a given strategy family. */
   checks: Record<string, { ok: boolean; detail: string }>
+  /** Fingerprint of the chains + bars (the core Well data). */
   sha256: string
+  /** Inputs Strike Canopy computes itself (npm run strategy:backtest-data),
+   *  attached after the pull by `opt import-sc`. Each has its own sha, so
+   *  attaching one never changes the core fingerprint (and never throws away
+   *  stored results of strategies that don't use it). */
+  extras?: Array<{ kind: 'trend-state'; symbol: string; expiration: string; file: string; sha256: string; points: number }>
 }
 
 export function packDir(root: string, date: string): string {

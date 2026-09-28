@@ -22,7 +22,7 @@ export interface CacheStats {
 // tens of MB parsed, and Redfish has the RAM for it.
 const PACK_LRU_MAX = Number(process.env.OPT_PACK_CACHE_FILES ?? 40)
 const packLru = new Map<string, unknown>()
-async function readPackFile<T>(file: string): Promise<T> {
+export async function readPackFile<T>(file: string): Promise<T> {
   const hit = packLru.get(file)
   if (hit !== undefined) {
     packLru.delete(file)
