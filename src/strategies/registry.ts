@@ -54,7 +54,7 @@ function needKey(d: DataNeed, symbols: readonly string[]): string[] {
     case 'chain-minute':
       return (d.symbol ? [d.symbol] : symbols).map((s) => `chain-minute:${s}`)
     case 'bars-1m':
-      return [`bars-1m:${d.table}`]
+      return d.symbol && !symbols.includes(d.symbol) ? [] : [`bars-1m:${d.table}`]
     default:
       return [d.kind]
   }
