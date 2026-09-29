@@ -41,7 +41,12 @@ const Env = z.object({
   // inside this container via the host-gateway alias, see docker-compose.yml).
   OPT_OLLAMA_URL: z.string().default('http://host.docker.internal:11434'),
   OPT_OLLAMA_MODEL: z.string().default('qwen3:30b-a3b-ctx32k'),
-  OPT_OLLAMA_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300_000)
+  // 20min -- confirmed 2026-09-29: Redfish has no GPU (only display device
+  // is the BMC's ASPEED chip), so this 30B model runs on CPU only, and a
+  // run can also queue behind Alan's news-classifier LLM calls hitting the
+  // same Ollama instance. 300s wasn't enough even with a bumped num_predict
+  // (llm.ts) -- the request errored cleanly (good) but never got an answer.
+  OPT_OLLAMA_TIMEOUT_MS: z.coerce.number().int().min(1000).default(1_200_000)
 })
 const env = Env.parse(process.env)
 const logger = pino({ level: env.LOG_LEVEL })
