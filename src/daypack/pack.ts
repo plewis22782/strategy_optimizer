@@ -31,6 +31,10 @@ export interface ChainPayload {
 
 export interface BarsPayload {
   table: BarsTable
+  /** Set for a multi-symbol table (streamed_minute_bars); omitted for the
+   *  single-symbol SPX tables (spx_minute_bars/es_implied_spx_minute/
+   *  es_minute_bars), which need no disambiguation. */
+  symbol?: string
   fromMs: number
   toMs: number
   rows: BarRow[]
@@ -43,7 +47,7 @@ export interface Manifest {
   wellUrl: string
   strikeCanopyRef: string
   chains: Array<{ file: string; key: ChainKey; rows: number; buckets: number }>
-  bars: Array<{ file: string; table: BarsTable; fromMs: number; toMs: number; rows: number; rthRows: number }>
+  bars: Array<{ file: string; table: BarsTable; symbol?: string; fromMs: number; toMs: number; rows: number; rthRows: number }>
   /** Why this day is (not) usable for a given strategy family. */
   checks: Record<string, { ok: boolean; detail: string }>
   /** Fingerprint of the chains + bars (the core Well data). */
@@ -63,8 +67,8 @@ export function chainFile(k: ChainKey): string {
   return `chain_${k.symbol}_${k.expiration}_${k.bucketSec}s.json.gz`
 }
 
-export function barsFile(table: BarsTable): string {
-  return `bars_${table}.json.gz`
+export function barsFile(table: BarsTable, symbol?: string): string {
+  return symbol ? `bars_${table}_${symbol}.json.gz` : `bars_${table}.json.gz`
 }
 
 async function writeAtomic(file: string, buf: Buffer): Promise<void> {

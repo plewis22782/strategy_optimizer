@@ -54,6 +54,14 @@ const PACKED: Record<string, string> = {
   'bars-1m:spx_minute_bars': 'spx_bars',
   'bars-1m:es_implied_spx_minute': '', // packed; no per-day check needed
   'bars-1m:es_minute_bars': '',
+  // streamed_minute_bars (the non-SPX WAE/candle-context table), added
+  // 2026-09-29 alongside pull.ts's own per-symbol loop (PACK_BAR_SYMBOLS) --
+  // for nutterfly/spy1, vwapscalp, and strangle's QQQ leg. Keyed by symbol
+  // (unlike the single-symbol tables above) since coverage genuinely
+  // differs day to day between QQQ/IWM/SPY.
+  'bars-1m:streamed_minute_bars:QQQ': 'qqq_bars',
+  'bars-1m:streamed_minute_bars:IWM': 'iwm_bars',
+  'bars-1m:streamed_minute_bars:SPY': 'spy_bars',
   'trend-state': 'trend_state', // attached by `opt import-sc` (Strike Canopy's getTrendState)
   'spot-raw': 'raw_spot' // attached by `opt import-sc` (Strike Canopy's rawSpotAt series)
 }
@@ -62,8 +70,23 @@ function needKey(d: DataNeed, symbols: readonly string[]): string[] {
   switch (d.kind) {
     case 'chain-minute':
       return (d.symbol ? [d.symbol] : symbols).map((s) => `chain-minute:${s}`)
-    case 'bars-1m':
-      return d.symbol && !symbols.includes(d.symbol) ? [] : [`bars-1m:${d.table}`]
+    case 'bars-1m': {
+      if (d.symbol && !symbols.includes(d.symbol)) return []
+      // streamed_minute_bars is multi-symbol -- scope the key by whichever
+      // symbol(s) this data need actually resolves to (its own explicit
+      // `symbol`, or the footprint's already-narrowed resolved symbols when
+      // omitted). The single-symbol SPX tables need no such scoping.
+      if (d.table === 'streamed_minute_bars') {
+        const syms = d.symbol ? [d.symbol] : symbols
+        return syms.map((s) => `bars-1m:${d.table}:${s}`)
+      }
+      return [`bars-1m:${d.table}`]
+    }
+    // `{ kind: 'candles' }` is sugar for "this footprint's own resolved
+    // symbol's 1-minute bars" -- SPX reads spx_minute_bars, everything else
+    // reads streamed_minute_bars for that symbol.
+    case 'candles':
+      return symbols.map((s) => (s === 'SPX' ? 'bars-1m:spx_minute_bars' : `bars-1m:streamed_minute_bars:${s}`))
     default:
       return [d.kind]
   }

@@ -35,9 +35,15 @@ export async function readPackFile<T>(file: string): Promise<T> {
   return v
 }
 
+/** Bars-map key: table alone for a single-symbol table, `table:symbol` for
+ *  a multi-symbol one (streamed_minute_bars). */
+function barsMapKey(table: BarsTable, symbol?: string): string {
+  return symbol ? `${table}:${symbol}` : table
+}
+
 export class CachedWellClient extends WellClient {
   private chains = new Map<string, ChainPayload>()
-  private bars = new Map<BarsTable, BarsPayload[]>()
+  private bars = new Map<string, BarsPayload[]>()
   readonly stats: CacheStats = { chainHistoryHits: 0, snapshotDerived: 0, snapshotMisses: 0, barsCalls: 0 }
 
   constructor(logger: Logger) {
@@ -59,21 +65,21 @@ export class CachedWellClient extends WellClient {
     }
     for (const b of man.bars) {
       const p = await readPackFile<BarsPayload>(path.join(dir, b.file))
-      const arr = this.bars.get(b.table) ?? []
+      const key = barsMapKey(b.table, b.symbol)
+      const arr = this.bars.get(key) ?? []
       arr.push(p)
-      this.bars.set(b.table, arr)
+      this.bars.set(key, arr)
     }
     return man
   }
 
   override async getBars(table: BarsTable, fromMs: number, toMs: number, symbol?: string): Promise<BarRow[]> {
-    if (symbol) throw new Error(`CachedWellClient.getBars: per-symbol bars (${symbol}) are not packed`)
     this.stats.barsCalls++
-    const packs = this.bars.get(table) ?? []
+    const packs = this.bars.get(barsMapKey(table, symbol)) ?? []
     const covering = packs.find((p) => p.fromMs <= fromMs && p.toMs >= toMs)
     if (!covering) {
       throw new Error(
-        `CachedWellClient.getBars: ${table} [${new Date(fromMs).toISOString()}, ${new Date(toMs).toISOString()}] not covered by any loaded pack`
+        `CachedWellClient.getBars: ${table}${symbol ? ':' + symbol : ''} [${new Date(fromMs).toISOString()}, ${new Date(toMs).toISOString()}] not covered by any loaded pack`
       )
     }
     return covering.rows.filter((r) => {
