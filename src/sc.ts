@@ -9,7 +9,8 @@ export type {
   BarsTable,
   BarRow,
   ChainHistoryRow,
-  ChainSnapshotRow
+  ChainSnapshotRow,
+  WellCandle
 } from '../vendor/strike-canopy/tastytrade-market-recorder/src/well-client.js'
 export { ChainHistoryCache } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/chain-history-cache.js'
 export { etWallToUtcMs } from '../vendor/strike-canopy/tastytrade-market-recorder/src/strategy/hist-chain.js'

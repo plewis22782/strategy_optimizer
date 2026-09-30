@@ -53,13 +53,17 @@ export const PACK_BAR_TABLES: BarsTable[] = ['spx_minute_bars', 'es_implied_spx_
 // the whole day's pull.
 export const CHAIN_SYMBOLS = ['SPX', 'QQQ', 'IWM', 'SPY']
 
-// streamed_minute_bars (the WAE/candle-context table for non-SPX symbols),
-// added 2026-09-29 alongside a per-symbol check -- for nutterfly/spy1,
-// vwapscalp, and strangle's QQQ leg, all of which were unreplayable without
-// it. Same span as SPX's own bars pull (session open - WARMUP_DAYS, so the
-// EMA-200/RMA-100 WAE math has its warm-up window); RTH-only filtering
-// happens on the READ side (hotch-signal.ts's underlyingBarsWide), so the
-// pack stores every bucket in range unfiltered, same as spx_minute_bars.
+// Non-SPX underlying bars (the WAE/candle-context data for nutterfly/spy1,
+// vwapscalp, and strangle's QQQ leg), added 2026-09-29. Pulled via The
+// Well's /api/candles (WellClient.getCandles) rather than the raw
+// streamed_minute_bars table (/api/bars): candles auto-blends
+// massive > tasty > yahoo per bucket, so a date the tasty archive never
+// recorded (anything before ~2026-09-15, back to Massive's 2024-09
+// history) still gets real 1-min OHLCV -- streamed_minute_bars alone is
+// tasty-only and empty that far back. Same span as SPX's own bars pull
+// (session open - WARMUP_DAYS, so the EMA-200/RMA-100 WAE math has its
+// warm-up window); RTH-only filtering happens on the READ side
+// (hotch-signal.ts's underlyingBarsWide).
 export const PACK_BAR_SYMBOLS = ['QQQ', 'IWM', 'SPY']
 
 async function retry<T>(what: string, logger: Logger, fn: () => Promise<T | null>, ok: (v: T) => boolean): Promise<T> {
@@ -153,17 +157,33 @@ export async function pullDay(
     detail: `${spxRth} of 390 RTH SPX 1-min bars (Hotch fractal / WAE / spike detection need them)`
   }
 
-  // --- streamed_minute_bars, one symbol at a time (QQQ/IWM/SPY) -- caught
-  // per symbol like the chain-history loop above, so one thin/failed symbol
-  // never costs the others their pull.
+  // --- underlying 1-min candles, one symbol at a time (QQQ/IWM/SPY) -- via
+  // /api/candles (massive > tasty > yahoo per bucket), not the raw
+  // streamed_minute_bars table, so this reaches back to Massive's 2024-09
+  // history, not just tasty's ~2026-09-15 start. Caught per symbol like the
+  // chain-history loop above, so one thin/failed symbol never costs the
+  // others their pull. A WellCandle has no `ticks` column (that's a
+  // tasty-CAGG-specific stale-reconnect-tick guard); a non-null `volume`
+  // is the equivalent "this bucket is a real trade, not a gap" signal here.
   for (const sym of PACK_BAR_SYMBOLS) {
     const checkName = `${sym.toLowerCase()}_bars`
     try {
-      let rows = await well.getBars('streamed_minute_bars', span.fromMs, span.toMs, sym)
-      for (let i = 0; i < 2 && rows.length === 0; i++) {
+      let candles = await well.getCandles(sym, '1m', span.fromMs, span.toMs)
+      for (let i = 0; i < 2 && (!candles || candles.length === 0); i++) {
         await new Promise((r) => setTimeout(r, 5_000))
-        rows = await well.getBars('streamed_minute_bars', span.fromMs, span.toMs, sym)
+        candles = await well.getCandles(sym, '1m', span.fromMs, span.toMs)
       }
+      const rows = (candles ?? []).map((c) => ({
+        bucket: c.t,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+        ticks: c.volume != null && c.close != null ? 2 : 0,
+        quoteOpen: null,
+        quoteClose: null
+      }))
       const bfile = barsFile('streamed_minute_bars', sym)
       hash.update(
         await writeJsonGz(path.join(dir, bfile), { table: 'streamed_minute_bars', symbol: sym, fromMs: span.fromMs, toMs: span.toMs, rows })
