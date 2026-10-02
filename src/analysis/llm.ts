@@ -1,6 +1,7 @@
 // Turns a ComputedSummary into readable prose + recommendations. The model
 // only ever narrates numbers that are already in the summary -- it never
 // sees raw passes and is told not to invent figures.
+import { Agent, fetch } from 'undici'
 import type { ComputedSummary } from './summary.js'
 
 export interface OllamaConfig {
@@ -43,11 +44,19 @@ function stripThinking(text: string): string {
 export async function narrate(cfg: OllamaConfig, summary: ComputedSummary): Promise<string> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), cfg.timeoutMs)
+  // Global fetch (undici)'s default headersTimeout/bodyTimeout is 300s,
+  // independent of any AbortSignal -- it was killing this call long before
+  // cfg.timeoutMs (confirmed live 2026-10-02: "HeadersTimeoutError" even
+  // after the proxy's own timeout was raised). A dedicated Agent with a
+  // longer timeout than our own AbortController lets OUR timeout fire first,
+  // so a genuine timeout still surfaces as the clear message below.
+  const dispatcher = new Agent({ headersTimeout: cfg.timeoutMs + 5_000, bodyTimeout: cfg.timeoutMs + 5_000 })
   try {
     const res = await fetch(`${cfg.url}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       signal: controller.signal,
+      dispatcher,
       body: JSON.stringify({
         model: cfg.model,
         think: false,
@@ -69,5 +78,6 @@ export async function narrate(cfg: OllamaConfig, summary: ComputedSummary): Prom
     throw err
   } finally {
     clearTimeout(timer)
+    void dispatcher.close()
   }
 }
