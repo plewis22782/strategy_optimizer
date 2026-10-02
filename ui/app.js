@@ -315,17 +315,37 @@ async function loadRuns() {
   } catch {
     return
   }
+  const DELETABLE = ['done', 'cancelled', 'error']
   $('runs').innerHTML = rows.length
     ? rows
         .map(
           (r) => `<tr data-run="${r.id}" class="${selRun === r.id ? 'sel' : ''}"><td class="mono">${r.id}</td><td>${esc(r.strategy)}</td><td>${esc(r.search)}</td><td>${esc(r.criterion)}</td>
       <td><span class="pill ${r.status === 'running' ? 'running' : r.status === 'error' ? 'error' : ''}" title="${esc(r.error || '')}">${esc(r.status)}</span></td>
-      <td class="r mono">${r.passes}</td><td class="mono">${r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td><td class="sub">${esc(r.note || '')}</td></tr>`
+      <td class="r mono">${r.passes}</td><td class="mono">${r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td><td class="sub">${esc(r.note || '')}</td>
+      <td>${DELETABLE.includes(r.status) ? `<button class="btn ghost" type="button" data-del="${r.id}" title="Delete run #${r.id}">Delete</button>` : ''}</td></tr>`
         )
         .join('')
-    : '<tr><td colspan="8" class="empty">No runs yet — set up a test above and start it.</td></tr>'
+    : '<tr><td colspan="9" class="empty">No runs yet — set up a test above and start it.</td></tr>'
 }
-$('runs').addEventListener('click', (e) => {
+$('runs').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-del]')
+  if (del) {
+    e.stopPropagation()
+    const id = +del.dataset.del
+    if (!confirm(`Delete run #${id} and all its passes? This can't be undone.`)) return
+    try {
+      await api(`/api/runs/${id}`, { method: 'DELETE' })
+      if (selRun === id) {
+        selRun = null
+        $('results').hidden = true
+        $('passPanel').hidden = true
+      }
+      loadRuns()
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`)
+    }
+    return
+  }
   const tr = e.target.closest('tr[data-run]')
   if (tr) openRun(+tr.dataset.run)
 })

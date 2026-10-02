@@ -10,6 +10,7 @@
 //   GET  /api/runs                       recent runs
 //   GET  /api/runs/:id                   one run (+ live progress)
 //   POST /api/runs/:id/cancel
+//   DELETE /api/runs/:id                 delete a terminal (done/cancelled/error) run; day_results untouched
 //   GET  /api/runs/:id/passes?phase=back|forward
 //   GET  /api/passes/:id                 pass + per-session results
 //   POST /api/passes/:id/replay?date=    re-run one session with its trade log
@@ -195,6 +196,16 @@ route('POST', /^\/api\/runs\/(\d+)\/cancel$/, async (_req, _url, m) => {
   const id = idOf(m)
   if (active?.id === id) active.cancel = true
   await db.query(`UPDATE runs SET status = 'cancelled', finished_at = now() WHERE id = $1 AND status = 'queued'`, [id])
+  return { ok: true }
+})
+
+route('DELETE', /^\/api\/runs\/(\d+)$/, async (_req, _url, m) => {
+  const id = idOf(m)
+  if (active?.id === id) throw new HttpError(409, 'cannot delete the active run -- cancel it first')
+  // passes/pass_days cascade via FK; day_results is a content-addressed cache
+  // shared across runs and must never be touched by a run's deletion.
+  const { rowCount } = await db.query(`DELETE FROM runs WHERE id = $1 AND status IN ('done', 'cancelled', 'error')`, [id])
+  if (!rowCount) throw new HttpError(404, 'no such run, or it is still queued/running')
   return { ok: true }
 })
 
